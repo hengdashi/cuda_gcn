@@ -1,1 +1,3 @@
-cuda_gcn
+#Parallelization of Graph Convolutional Network
+---
+

@@ -3,6 +3,7 @@
 #include "timer.h"
 #include <cstdlib>
 #include <cmath>
+#include <stdio.h>
 
 Matmul::Matmul(Variable *a, Variable *b, Variable *c, int m, int n, int p) :
         a(a), b(b), c(c), m(m), n(n), p(p) {}
@@ -56,7 +57,7 @@ void SparseMatmul::forward(bool training) {
 void SparseMatmul::backward() {
     timer_start(TMR_SPMATMUL_BW);
     b->zero_grad();
-    int row = 0;
+    // int row = 0;
 
     for (int i = 0; i < sp->indptr.size() - 1; i++) {
         for (int jj = sp->indptr[i]; jj < sp->indptr[i + 1]; jj++) {
@@ -69,9 +70,13 @@ void SparseMatmul::backward() {
 }
 
 
+GraphSum::GraphSum(Variable *in, Variable *out, SparseIndex *graph, int dim) :
+        in(in), out(out), graph(graph), dim(dim) {}
+
 __global__
-void graphsum_forward(float *d_in, float *d_out, int *d_indptr, int *d_indices, int dim) {
-    for (int src = 0; src < sizeof(d_indptr) / sizeof(int) - 1; src++) {
+void graphsum_forward_kernel(float *d_in, float *d_out, int *d_indptr, int *d_indices, int dim, int size) {
+    // printf("size of d_indptr: %lu\n", size);
+    for (int src = 0; src < size - 1; src++) {
         for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
             int dst = d_indices[i];
             float coef = 1.0 / sqrtf(
@@ -84,15 +89,12 @@ void graphsum_forward(float *d_in, float *d_out, int *d_indptr, int *d_indices, 
     }
 }
 
-GraphSum::GraphSum(Variable *in, Variable *out, SparseIndex *graph, int dim) :
-        in(in), out(out), graph(graph), dim(dim) {}
-
 void GraphSum::forward(bool training) {
     timer_start(TMR_GRAPHSUM_FW);
     out->zero();
 
     #ifdef __CUDACC__
-    
+
     float *d_in;
     float *d_out;
     int *d_indptr;
@@ -110,7 +112,8 @@ void GraphSum::forward(bool training) {
     cudaMemcpy(d_indices, &(graph->indices[0]), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
 
     // kernel
-    graphsum_forward<<<1, 1>>>(d_in, d_out, d_indptr, d_indices, dim);
+    // printf("size of indptr: %lu\n", graph->indptr.size());
+    graphsum_forward_kernel<<<1, 1>>>(d_in, d_out, d_indptr, d_indices, dim, graph->indptr.size());
 
     // copy result back to out
     cudaMemcpy(&(out->data[0]), d_out, out->data.size() * sizeof(float), cudaMemcpyDeviceToHost);
@@ -120,6 +123,7 @@ void GraphSum::forward(bool training) {
     cudaFree(d_out);
     cudaFree(d_indptr);
     cudaFree(d_indices);
+
     #else
 
     for (int src = 0; src < graph->indptr.size() - 1; src++) {
@@ -133,13 +137,64 @@ void GraphSum::forward(bool training) {
                 out->data[src * dim + j] += coef * in->data[dst * dim + j];
         }
     }
+
     #endif
+
     timer_stop(TMR_GRAPHSUM_FW);
+}
+
+__global__
+void graphsum_backward_kernel(float *d_in, float *d_out, int *d_indptr, int *d_indices, int dim, int size) {
+    // printf("size of d_indptr: %lu\n", size);
+    for (int src = 0; src < size - 1; src++) {
+        for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
+            int dst = d_indices[i];
+            float coef = 1.0 / sqrtf(
+                    (d_indptr[src + 1] - d_indptr[src]) * (d_indptr[dst + 1] - d_indptr[dst])
+            );
+            for (int j = 0; j < dim; j++)
+                // This only works for undirected graphs. Should be out[dst] += coef * in[src]
+                d_in[src * dim + j] += coef * d_out[dst * dim + j];
+        }
+    }
 }
 
 void GraphSum::backward() {
     timer_start(TMR_GRAPHSUM_BW);
     in->zero_grad();
+
+    #ifdef __CUDACC__
+
+    float *d_in;
+    float *d_out;
+    int *d_indptr;
+    int *d_indices;
+
+    // allocate memory
+    cudaMalloc(&d_in, in->grad.size() * sizeof(float));
+    cudaMalloc(&d_out, out->grad.size() * sizeof(float));
+    cudaMalloc(&d_indptr, graph->indptr.size() * sizeof(int));
+    cudaMalloc(&d_indices, graph->indices.size() * sizeof(int));
+
+    // copy memory from host to device
+    cudaMemcpy(d_out, &(out->grad[0]), out->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indptr, &(graph->indptr[0]), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indices, &(graph->indices[0]), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+    // kernel
+    // printf("size of indptr: %lu\n", graph->indptr.size());
+    graphsum_backward_kernel<<<1, 1>>>(d_in, d_out, d_indptr, d_indices, dim, graph->indptr.size());
+
+    // copy result back to out
+    cudaMemcpy(&(in->grad[0]), d_in, in->grad.size() * sizeof(float), cudaMemcpyDeviceToHost);
+
+    // free memory
+    cudaFree(d_in);
+    cudaFree(d_out);
+    cudaFree(d_indptr);
+    cudaFree(d_indices);
+
+    #else
 
     for (int src = 0; src < graph->indptr.size() - 1; src++) {
         for (int i = graph->indptr[src]; i < graph->indptr[src + 1]; i++) {
@@ -151,6 +206,8 @@ void GraphSum::backward() {
                 in->grad[src * dim + j] += coef * out->grad[dst * dim + j];
         }
     }
+    #endif
+
     timer_stop(TMR_GRAPHSUM_BW);
 }
 

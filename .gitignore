@@ -3,3 +3,7 @@
 
 # data
 data/*
+
+# executable
+gcn-seq
+gcn-hengda

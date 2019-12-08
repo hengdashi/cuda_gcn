@@ -1,5 +1,11 @@
 # macOS
 .DS_Store
 
+# vscode
+.vscode
+
+# build
+gcn*
+
 # data
 data/*

@@ -3,6 +3,7 @@
 #include <curand_kernel.h>
 
 #define TILE_SIZE 32
+#define MAX_THREAD_PER_BLOCK 1024
 
 __global__ void cudaMatMul(const float *a, const float *b, float *c, const uint m, const uint n, const uint p) {
     __shared__ float tileA[TILE_SIZE][TILE_SIZE];
@@ -119,35 +120,57 @@ void cudaCallMatMulBackward(
 }
 
 __global__ void setupRandKernel(curandState *state) {
-    int thread_index = blockIdx.x * blockDim.x + threadIdx.x;
-    curand_init(1234, thread_index, 0, &state[thread_index]);
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    curand_init(1234, id, 0, &state[id]);
 }
 
-__global__ void cudaDropoutForward(float *in, bool *mask, curandState *state, const uint size, const float p) {
-    int thread_index = blockIdx.x * blockDim.x + threadIdx.x;
-    float x, scale = 1 / (1 - p); 
+__global__ void cudaDropoutForward(float *in, bool *mask, curandState *state, const uint size, const float p, const float scale, const bool useMask) {
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    float x; 
     bool keep;
-    curandState localState = state[thread_index];
-    if (thread_index < size) {
+    curandState localState = state[id];
+    if (id < size) {
         x = curand_uniform(&localState);
         keep = x >= p;
-        in[thread_index] *= keep ? scale : 0;
-        if (mask) mask[thread_index] = keep;
+        in[id] *= keep ? scale : 0;
+        if (useMask) mask[id] = keep;
     }
 }
 
 void cudaCallDropoutForward(
-    const uint block_count,
-    const uint per_block_thread_count,
     float *in,
     bool *mask,
     const uint size,
+    const float p,
+    const bool useMask) {
+    
+    float scale = 1 / (1 - p);
+
+    dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
+    dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
+
+    curandState *devState;
+    cudaMalloc((void**) &devState, size * sizeof(curandState));
+    setupRandKernel<<<block, thread_in_block>>>(devState);
+    cudaDropoutForward<<<block, thread_in_block>>>(in, mask, devState, size, p, scale, useMask);
+
+    cudaFree(devState);
+}
+
+__global__ void cudaDropoutBackward(float *in_grad, const bool *mask, const uint size, const float scale) {
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
+    if (id < size)
+        in_grad[id] *= mask[id] ? scale : 0;
+}
+
+void cudaCallDropoutBackward(
+    float *in_grad,
+    const bool *mask,
+    const uint size,
     const float p) {
     
-    const uint thread_count = block_count * per_block_thread_count;
-    curandState *devStates;
-    cudaMalloc((void**) &devStates, thread_count * sizeof(curandState));
-    setupRandKernel<<<block_count, per_block_thread_count>>>(devStates);
-    cudaDropoutForward<<<block_count, per_block_thread_count>>>(in, mask, devStates, size, p);
-    cudaFree(devStates);
+    float scale = 1 / (1 - p);
+    dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
+    dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
+    cudaDropoutBackward<<<block, thread_in_block>>>(in_grad, mask, size, scale);
 }

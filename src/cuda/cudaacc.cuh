@@ -35,7 +35,13 @@ void cudaCallDropoutForward(
     float *in,
     bool *mask,
     const uint size,
-    const float p);
+    const float p,
+    const bool useMask);
 
+void cudaCallDropoutBackward(
+    float *in_grad,
+    const bool *mask,
+    const uint size,
+    const float p);
 
 #endif

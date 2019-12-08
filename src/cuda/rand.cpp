@@ -14,9 +14,6 @@ void init_rand_state() {
     }
     rand_state[0] = x;
     rand_state[1] = y;
-
-    std::cout << "Rand 1: " << x << std::endl;
-    std::cout << "Rand 2: " << y << std::endl;
 }
 
 uint32_t xorshift128plus(uint64_t* state) {

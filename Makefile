@@ -9,7 +9,7 @@ HFILES=$(prefix)*.h
 
 myprefix=src/hengda/
 HENGDAFILES=$(myprefix)*.cpp $(myprefix)*.cu
-HENGDAHFILES=$(myprefix)*.h
+HENGDAHFILES=$(myprefix)*.h $(myprefix)*.cuh
 
 seq: $(prefix)main.cpp $(CXXFILES) $(HFILES)
 	$(CXX) $(CXXFLAGS) -o gcn-seq $(CXXFILES) $(LDFLAGS)

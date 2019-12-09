@@ -6,6 +6,7 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <curand_kernel.h>
 
 #ifdef __CUDACC__
 #define CUDA_CALLABLE __host__ __device__
@@ -30,6 +31,9 @@ void cudaCallMatMulBackward(
     const uint m,
     const uint n, 
     const uint p);
+
+void cudaCallInitRandomState(const uint size);
+void cudaCallFreeRandomState();
 
 void cudaCallDropoutForward(
     float *in,

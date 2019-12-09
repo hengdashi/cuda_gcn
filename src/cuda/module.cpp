@@ -234,35 +234,25 @@ void Dropout::forward(bool training) {
     if (!training) return;
     timer_start(TMR_DROPOUT_FW);
 
-    const int threshold = int(p * MY_RAND_MAX);
-    float scale = 1 / (1 - p);
-    for (int i = 0; i < in->data.size(); i++) {
-        bool keep = (int)RAND() >= threshold;
-        in->data[i] *= keep ? scale : 0;
-        if (mask) mask[i] = keep;
-    }
-
-    // std::cout << std::endl << "Dropout!" << std::endl;
-    // if (mask) std::cout << "Has mask!" << std::endl << std::endl;
-
-    // int size = in->data.size();
-
-    // float *dev_in;
-    // cudaMalloc((void**) &dev_in, size * sizeof(float));
-    // cudaMemcpy(dev_in, in->data.data(), size * sizeof(float), cudaMemcpyHostToDevice);
-    // bool *dev_mask;
-    // if (mask) cudaMalloc((void**) &dev_mask, size * sizeof(bool));
-
-    // cudaCallDropoutForward(dev_in, dev_mask, size, p, (mask != nullptr));
-
-    // cudaMemcpy(in->data.data(), dev_in, size * sizeof(float), cudaMemcpyDeviceToHost);
-    // if (mask) cudaMemcpy(mask, dev_mask, size * sizeof(bool), cudaMemcpyDeviceToHost);
-
-    // if (mask) {
-    //     int cnt = 0;
-    //     for (int i = 0; i < size; i++) cnt += mask[i] ? 1 : 0;
-    //     printf("Test mask portion: %f\n", (float)cnt / (float)size);
+    // const int threshold = int(p * MY_RAND_MAX);
+    // float scale = 1 / (1 - p);
+    // for (int i = 0; i < in->data.size(); i++) {
+    //     bool keep = (int)RAND() >= threshold;
+    //     in->data[i] *= keep ? scale : 0;
+    //     if (mask) mask[i] = keep;
     // }
+
+    int size = in->data.size();
+    float *dev_in;
+    cudaMalloc((void**) &dev_in, size * sizeof(float));
+    cudaMemcpy(dev_in, in->data.data(), size * sizeof(float), cudaMemcpyHostToDevice);
+    bool *dev_mask;
+    if (mask) cudaMalloc((void**) &dev_mask, size * sizeof(bool));
+
+    cudaCallDropoutForward(dev_in, dev_mask, size, p, (mask != nullptr));
+
+    cudaMemcpy(in->data.data(), dev_in, size * sizeof(float), cudaMemcpyDeviceToHost);
+    if (mask) cudaMemcpy(mask, dev_mask, size * sizeof(bool), cudaMemcpyDeviceToHost);
 
     timer_stop(TMR_DROPOUT_FW);
 }
@@ -270,8 +260,8 @@ void Dropout::forward(bool training) {
 void Dropout::backward() {
     if (!mask) return;
     timer_start(TMR_DROPOUT_BW);
+    
     // float scale = 1 / (1 - p);
-
     // for (int i = 0; i < in->data.size(); i++)
     //     in->grad[i] *= mask[i] ? scale : 0;
 

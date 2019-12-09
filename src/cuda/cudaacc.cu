@@ -1,11 +1,16 @@
 #include "cudaacc.cuh"
 
-#include <curand_kernel.h>
-
 #define TILE_SIZE 32
 #define MAX_THREAD_PER_BLOCK 1024
 
-__global__ void cudaMatMul(const float *a, const float *b, float *c, const uint m, const uint n, const uint p) {
+__global__ void cudaMatMul(
+    const float *a, 
+    const float *b, 
+    float *c, 
+    const uint m, 
+    const uint n, 
+    const uint p) {
+
     __shared__ float tileA[TILE_SIZE][TILE_SIZE];
     __shared__ float tileB[TILE_SIZE][TILE_SIZE];
     int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y;
@@ -47,7 +52,14 @@ void cudaCallMatMulForward(
     cudaMatMul<<<block, thread_in_block>>>(a, b, c, m, n, p);
 }
 
-__global__ void cudaCalcAGrad(float *a_grad, const float *b, const float *c_grad, const uint m, const uint n, const uint p) {
+__global__ void cudaCalcAGrad(
+    float *a_grad, 
+    const float *b, 
+    const float *c_grad, 
+    const uint m, 
+    const uint n, 
+    const uint p) {
+
     __shared__ float tileB[TILE_SIZE][TILE_SIZE];
     __shared__ float tileCGrad[TILE_SIZE][TILE_SIZE];
     int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y;
@@ -74,7 +86,14 @@ __global__ void cudaCalcAGrad(float *a_grad, const float *b, const float *c_grad
         a_grad[row * n + col] = res;
 }
 
-__global__ void cudaCalcBGrad(float *b_grad, const float *a, const float *c_grad, const uint m, const uint n, const uint p) {
+__global__ void cudaCalcBGrad(
+    float *b_grad, 
+    const float *a, 
+    const float *c_grad, 
+    const uint m, 
+    const uint n, 
+    const uint p) {
+
     __shared__ float tileA[TILE_SIZE][TILE_SIZE];
     __shared__ float tileCGrad[TILE_SIZE][TILE_SIZE];
     int bx = blockIdx.x, by = blockIdx.y, tx = threadIdx.x, ty = threadIdx.y;
@@ -119,18 +138,38 @@ void cudaCallMatMulBackward(
     cudaCalcBGrad<<<block_b, thread_in_block>>>(b_grad, a, c_grad, m, n, p);
 }
 
+curandState *devStates;
+
 __global__ void setupRandKernel(curandState *state) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     curand_init(1234, id, 0, &state[id]);
 }
 
-__global__ void cudaDropoutForward(float *in, bool *mask, curandState *state, const uint size, const float p, const float scale, const bool useMask) {
-    int id = blockIdx.x * blockDim.x + threadIdx.x;
+void cudaCallInitRandomState(const uint size) {
+    cudaMalloc((void**) &devStates, size * sizeof(curandState));
+    dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
+    dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
+    setupRandKernel<<<block,thread_in_block>>>(devStates);
+}
+
+void cudaCallFreeRandomState() {
+    cudaFree(devStates);
+}
+
+__global__ void cudaDropoutForward(
+    float *in, 
+    bool *mask,
+    curandState *state,
+    const uint size, 
+    const float p, 
+    const float scale, 
+    const bool useMask) {
+    
     float x; 
     bool keep;
-    curandState localState = state[id];
+    int id = blockIdx.x * blockDim.x + threadIdx.x;
     if (id < size) {
-        x = curand_uniform(&localState);
+        x = curand_uniform(&state[id]);
         keep = x >= p;
         in[id] *= keep ? scale : 0;
         if (useMask) mask[id] = keep;
@@ -145,16 +184,9 @@ void cudaCallDropoutForward(
     const bool useMask) {
     
     float scale = 1 / (1 - p);
-
     dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
-
-    curandState *devState;
-    cudaMalloc((void**) &devState, size * sizeof(curandState));
-    setupRandKernel<<<block, thread_in_block>>>(devState);
-    cudaDropoutForward<<<block, thread_in_block>>>(in, mask, devState, size, p, scale, useMask);
-
-    cudaFree(devState);
+    cudaDropoutForward<<<block, thread_in_block>>>(in, mask, devStates, size, p, scale, useMask);
 }
 
 __global__ void cudaDropoutBackward(float *in_grad, const bool *mask, const uint size, const float scale) {

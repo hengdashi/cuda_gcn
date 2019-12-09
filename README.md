@@ -1,9 +1,12 @@
 # Parallelization of Graph Convolutional Network
-## CrossEntropy Module
+## Merge from hengda branch: GraphSum+ReLU+CrossEntropy Module
 
-Main modification is in the src/seq/module.cu CrossEntropy::forward
+## To run cora dataset in GPU environment:
 
-## To run cora dataset:
+    make cuda
+    ./gcn-cuda cora
+
+## To run cora dataset in CPU:
 
     make
-    ./program cora
+    ./gcn-seq cora

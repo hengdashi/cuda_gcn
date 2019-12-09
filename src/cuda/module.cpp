@@ -139,6 +139,12 @@ void CrossEntropyLoss::forward(bool training) {
     int count = 0;
     if (training) logits->zero_grad();
 
+    #ifdef __CUDACC__
+    
+    CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
+
+    #else
+
     for (int i = 0; i < logits->data.size() / num_classes; i++) {
         if (truth[i] < 0) continue;
         count++;
@@ -161,6 +167,8 @@ void CrossEntropyLoss::forward(bool training) {
             logits->grad[i * num_classes + truth[i]] -= 1.0;
         }
     }
+
+    #endif
 
     *loss = total_loss / count;
     if (training) {

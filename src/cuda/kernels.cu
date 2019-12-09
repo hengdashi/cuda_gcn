@@ -117,6 +117,85 @@ void GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int dim)
     cudaFree(d_indices);
 }
 
+__global__ 
+void CrossEntropy_forward_kernel(float* logits_data, float* logits_grad, bool training, int num_classes, int* truth, int* count, float* thread_loss, int size) {
+    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    if (i >= size)  return;
+    if (truth[i] < 0) {
+    count[i] = 0;
+    return;
+    }
+    float *logit = &logits_data[i * num_classes];
+    float max_logit = -1e30, sum_exp = 0;
+    for (int j = 0; j < num_classes; j++)
+        max_logit = fmax(max_logit, logit[j]);
+    for (int j = 0; j < num_classes; j++) {
+        logit[j] -= max_logit;
+        sum_exp += expf(logit[j]);
+    }
+    if (training) {
+        for (int j = 0; j < num_classes; j++) {
+            float prob = expf(logit[j]) / sum_exp;
+            logits_grad[i * num_classes + j] = prob;
+        }
+        logits_grad[i * num_classes + truth[i]] -= 1.0;
+    }
+    count[i] = 1;
+    thread_loss[i] = logf(sum_exp) - logit[truth[i]];
+}
+
+void CrossEntropy_forward(Variable *logits, int *truth, float &total_loss, int &count, int num_classes, bool training) {
+    
+    // host function variables
+    float *logits_data = logits->data.data();
+    float *logits_grad = logits->grad.data();
+
+    // grid + block size
+    int grid = 256;
+    int block = (logits->data.size()/num_classes+256) / 256;
+
+    // data structures in GPU:
+    float* d_logits_data, *d_loss, *d_logits_grad;
+    int* d_truth, *d_count;
+    int logits_data_size = (int)(logits->data.size())*sizeof(float);
+    int logits_grad_size = (int)(logits->grad.size())*sizeof(float);
+    int loss_size = (int)(logits->data.size()/num_classes)*sizeof(float);
+    int truth_size = (int)(logits->data.size()/num_classes)*sizeof(int);
+
+    // cudaMalloc
+    cudaMalloc(&d_logits_data, logits_data_size);
+    cudaMalloc(&d_logits_grad, logits_grad_size);
+    cudaMalloc(&d_loss, loss_size);
+    cudaMalloc(&d_truth, truth_size);
+    cudaMalloc(&d_count, truth_size);
+
+    // copy data to GPU memory
+    cudaMemcpy(d_logits_data, logits_data, logits_data_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_logits_grad, logits_grad, logits_grad_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_truth, truth, truth_size, cudaMemcpyHostToDevice);
+
+    // run kernel function
+    CrossEntropy_forward_kernel <<< grid, block >>>(d_logits_data, d_logits_grad, training, num_classes, d_truth, d_count, d_loss, logits->data.size());
+    cudaDeviceSynchronize();
+
+    // updates logits->data and logits->grad in host function
+    cudaMemcpy(&(logits->data[0]), d_logits_data, logits_data_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(&(logits->grad[0]), d_logits_grad, logits_grad_size, cudaMemcpyDeviceToHost);
+
+    // accumulate and add count and total_loss variables by thrust::
+    thrust::device_ptr<int> count_ptr = thrust::device_pointer_cast(d_count);
+    count = thrust::reduce(count_ptr, count_ptr+(logits->data.size()/num_classes), (int)0, thrust::plus<int>());
+    thrust::device_ptr<float> loss_ptr = thrust::device_pointer_cast(d_loss);
+    total_loss = thrust::reduce(loss_ptr, loss_ptr+(logits->data.size()/num_classes), (float)0.0, thrust::plus<float>());
+
+    // free memory
+    cudaFree(d_logits_data);
+    cudaFree(d_loss);
+    cudaFree(d_logits_grad);
+    cudaFree(d_truth);
+    cudaFree(d_count);
+}
+
 __global__
 void ReLU_forward_kernel(float *d_in, bool *d_mask, const long unsigned int datasize, bool training) {
     uint i = (blockIdx.x * blockDim.x) + threadIdx.x;

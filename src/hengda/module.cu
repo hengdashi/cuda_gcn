@@ -74,26 +74,31 @@ GraphSum::GraphSum(Variable *in, Variable *out, SparseIndex *graph, int dim) :
         in(in), out(out), graph(graph), dim(dim) {}
 
 __global__
-void graphsum_forward_kernel(float *d_in, float *d_out, int *d_indptr, int *d_indices, int dim, int size) {
-    // printf("size of d_indptr: %lu\n", size);
-    for (int src = 0; src < size - 1; src++) {
-        for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
-            int dst = d_indices[i];
-            float coef = 1.0 / sqrtf(
-                    (d_indptr[src + 1] - d_indptr[src]) * (d_indptr[dst + 1] - d_indptr[dst])
-            );
-            for (int j = 0; j < dim; j++)
-                // This only works for undirected graphs. Should be out[dst] += coef * in[src]
-                d_out[src * dim + j] += coef * d_in[dst * dim + j];
+void graphsum_forward_kernel(float *d_in, float *d_out, int *d_indptr, int *d_indices, int dim, int numNodes) {
+    // printf("graphsum forward loop count: %lu\n", nodecount);
+    uint src = (blockIdx.x * blockDim.x) + threadIdx.x;
+    // printf("src: %u\n", src);
+    if (src >= numNodes)
+        return;
+    // printf("src: %d, i: %d, size: %d\n", src, d_indptr[src], d_indptr[src + 1]);
+    // for (int src = 0; src < numNodes; ++src) {
+    for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
+        int dst = d_indices[i];
+        float coef = 1.0 / sqrtf(
+                (d_indptr[src + 1] - d_indptr[src]) * (d_indptr[dst + 1] - d_indptr[dst])
+        );
+        // printf("dim: %d\n", dim);
+        for (int j = 0; j < dim; j++) {
+            // This only works for undirected graphs. Should be out[dst] += coef * in[src]
+            d_out[src * dim + j] += coef * d_in[dst * dim + j];
         }
     }
+    // }
 }
 
 void GraphSum::forward(bool training) {
     timer_start(TMR_GRAPHSUM_FW);
     out->zero();
-
-    #ifdef __CUDACC__
 
     float *d_in;
     float *d_out;
@@ -107,16 +112,23 @@ void GraphSum::forward(bool training) {
     cudaMalloc(&d_indices, graph->indices.size() * sizeof(int));
 
     // copy memory from host to device
-    cudaMemcpy(d_in, &(in->data[0]), in->data.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indptr, &(graph->indptr[0]), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indices, &(graph->indices[0]), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_in, in->data.data(), in->data.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indptr, graph->indptr.data(), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
 
     // kernel
     // printf("size of indptr: %lu\n", graph->indptr.size());
-    graphsum_forward_kernel<<<1, 1>>>(d_in, d_out, d_indptr, d_indices, dim, graph->indptr.size());
+    const int numNodes = graph->indptr.size() - 1;
+    const int bsize = 32;
+    dim3 numBlocks(bsize, 1);
+    dim3 threadsPerBlock(ceil(float(numNodes)/bsize), 1);
+    // dim3 numBlocks(1, 1);
+    // dim3 threadsPerBlock(1, 1);
+    graphsum_forward_kernel<<<numBlocks, threadsPerBlock>>>(d_in, d_out, d_indptr, d_indices, dim, numNodes);
+    cudaDeviceSynchronize();
 
     // copy result back to out
-    cudaMemcpy(&(out->data[0]), d_out, out->data.size() * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(out->data.data(), d_out, out->data.size() * sizeof(float), cudaMemcpyDeviceToHost);
 
     // free memory
     cudaFree(d_in);
@@ -124,46 +136,45 @@ void GraphSum::forward(bool training) {
     cudaFree(d_indptr);
     cudaFree(d_indices);
 
-    #else
-
-    for (int src = 0; src < graph->indptr.size() - 1; src++) {
-        for (int i = graph->indptr[src]; i < graph->indptr[src + 1]; i++) {
-            int dst = graph->indices[i];
-            float coef = 1.0 / sqrtf(
-                    (graph->indptr[src + 1] - graph->indptr[src]) * (graph->indptr[dst + 1] - graph->indptr[dst])
-            );
-            for (int j = 0; j < dim; j++)
-                // This only works for undirected graphs. Should be out[dst] += coef * in[src]
-                out->data[src * dim + j] += coef * in->data[dst * dim + j];
-        }
-    }
-
-    #endif
+    // for (int src = 0; src < graph->indptr.size() - 1; src++) {
+    //     for (int i = graph->indptr[src]; i < graph->indptr[src + 1]; i++) {
+    //         int dst = graph->indices[i];
+    //         float coef = 1.0 / sqrtf(
+    //                 (graph->indptr[src + 1] - graph->indptr[src]) * (graph->indptr[dst + 1] - graph->indptr[dst])
+    //         );
+    //         for (int j = 0; j < dim; j++)
+    //             // This only works for undirected graphs. Should be out[dst] += coef * in[src]
+    //             out->data[src * dim + j] += coef * in->data[dst * dim + j];
+    //     }
+    // }
 
     timer_stop(TMR_GRAPHSUM_FW);
 }
 
 __global__
-void graphsum_backward_kernel(float *d_in, float *d_out, int *d_indptr, int *d_indices, int dim, int size) {
-    // printf("size of d_indptr: %lu\n", size);
-    for (int src = 0; src < size - 1; src++) {
-        for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
-            int dst = d_indices[i];
-            float coef = 1.0 / sqrtf(
-                    (d_indptr[src + 1] - d_indptr[src]) * (d_indptr[dst + 1] - d_indptr[dst])
-            );
-            for (int j = 0; j < dim; j++)
-                // This only works for undirected graphs. Should be out[dst] += coef * in[src]
-                d_in[src * dim + j] += coef * d_out[dst * dim + j];
+void graphsum_backward_kernel(float *d_in, float *d_out, int *d_indptr, int *d_indices, int dim, int numNodes) {
+    // printf("graphsum backward loop count: %lu\n", nodecount);
+    uint src = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (src >= numNodes) {
+        return;
+    }
+    // for (int src = 0; src < numNodes; ++src) {
+    for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
+        int dst = d_indices[i];
+        float coef = 1.0 / sqrtf(
+                (d_indptr[src + 1] - d_indptr[src]) * (d_indptr[dst + 1] - d_indptr[dst])
+        );
+        for (int j = 0; j < dim; j++) {
+            // This only works for undirected graphs. Should be out[dst] += coef * in[src]
+            d_in[src * dim + j] += coef * d_out[dst * dim + j];
         }
     }
+    // }
 }
 
 void GraphSum::backward() {
     timer_start(TMR_GRAPHSUM_BW);
     in->zero_grad();
-
-    #ifdef __CUDACC__
 
     float *d_in;
     float *d_out;
@@ -177,16 +188,20 @@ void GraphSum::backward() {
     cudaMalloc(&d_indices, graph->indices.size() * sizeof(int));
 
     // copy memory from host to device
-    cudaMemcpy(d_out, &(out->grad[0]), out->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indptr, &(graph->indptr[0]), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indices, &(graph->indices[0]), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_out, out->grad.data(), out->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indptr, graph->indptr.data(), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
 
     // kernel
-    // printf("size of indptr: %lu\n", graph->indptr.size());
-    graphsum_backward_kernel<<<1, 1>>>(d_in, d_out, d_indptr, d_indices, dim, graph->indptr.size());
+    const int numNodes = graph->indptr.size() - 1;
+    const int bsize = 32;
+    dim3 numBlocks(bsize, 1);
+    dim3 threadsPerBlock(ceil(float(numNodes) / bsize), 1);
+    graphsum_backward_kernel<<<numBlocks, threadsPerBlock>>>(d_in, d_out, d_indptr, d_indices, dim, numNodes);
+    cudaDeviceSynchronize();
 
     // copy result back to out
-    cudaMemcpy(&(in->grad[0]), d_in, in->grad.size() * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(in->grad.data(), d_in, in->grad.size() * sizeof(float), cudaMemcpyDeviceToHost);
 
     // free memory
     cudaFree(d_in);
@@ -194,19 +209,16 @@ void GraphSum::backward() {
     cudaFree(d_indptr);
     cudaFree(d_indices);
 
-    #else
-
-    for (int src = 0; src < graph->indptr.size() - 1; src++) {
-        for (int i = graph->indptr[src]; i < graph->indptr[src + 1]; i++) {
-            int dst = graph->indices[i];
-            float coef = 1.0 / sqrtf(
-                    (graph->indptr[src + 1] - graph->indptr[src]) * (graph->indptr[dst + 1] - graph->indptr[dst])
-            );
-            for (int j = 0; j < dim; j++)
-                in->grad[src * dim + j] += coef * out->grad[dst * dim + j];
-        }
-    }
-    #endif
+    // for (int src = 0; src < graph->indptr.size() - 1; src++) {
+    //     for (int i = graph->indptr[src]; i < graph->indptr[src + 1]; i++) {
+    //         int dst = graph->indices[i];
+    //         float coef = 1.0 / sqrtf(
+    //                 (graph->indptr[src + 1] - graph->indptr[src]) * (graph->indptr[dst + 1] - graph->indptr[dst])
+    //         );
+    //         for (int j = 0; j < dim; j++)
+    //             in->grad[src * dim + j] += coef * out->grad[dst * dim + j];
+    //     }
+    // }
 
     timer_stop(TMR_GRAPHSUM_BW);
 }
@@ -263,22 +275,89 @@ ReLU::~ReLU() {
     delete[] mask;
 }
 
+__global__ void relu_forward_kernel(float *d_in, bool *d_mask, const long unsigned int datasize, bool training) {
+    uint i = (blockIdx.x * blockDim.x) + threadIdx.x;
+    if (i >= datasize) {
+      return;
+    }
+
+    bool keep = d_in[i] > 0;
+    if (training) d_mask[i] = keep;
+    if (!keep) d_in[i] = 0;
+}
+
 void ReLU::forward(bool training) {
     timer_start(TMR_RELU_FW);
 
-    for (int i = 0; i < in->data.size(); i++) {
-        bool keep = in->data[i] > 0;
-        if (training) mask[i] = keep;
-        if (!keep) in->data[i] = 0;
-    }
+    float *d_in;
+    bool *d_mask; 
+    const long unsigned int datasize = in->data.size();
+
+    cudaMalloc(&d_in, datasize * sizeof(float));
+    cudaMalloc(&d_mask, datasize * sizeof(bool));
+
+    cudaMemcpy(d_in, in->data.data(), datasize * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_mask, mask, datasize * sizeof(bool), cudaMemcpyHostToDevice);
+    // printf("ReLU data size %lu\n", in->data.size());
+
+    const int bsize = 128;
+    dim3 numBlocks(bsize, 1);
+    dim3 threadsPerBlock(ceil(float(datasize) / bsize), 1);
+    relu_forward_kernel<<<numBlocks, threadsPerBlock>>>(d_in, d_mask, datasize, training);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(in->data.data(), d_in, datasize * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(mask, d_mask, datasize * sizeof(bool), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_in);
+    cudaFree(d_mask);
+
+    // for (int i = 0; i < in->data.size(); i++) {
+    //   bool keep = in->data[i] > 0;
+    //   if (training) mask[i] = keep;
+    //   if (!keep) in->data[i] = 0;
+    // }
+
     timer_stop(TMR_RELU_FW);
+}
+
+__global__ void relu_backward_kernel(float *d_in, bool *d_mask, long unsigned int datasize) {
+    uint i = (blockIdx.x * blockDim.x) + threadIdx.x;
+
+    if (i >= datasize) {
+      return;
+    }
+
+    if (!d_mask[i]) d_in[i] = 0;
 }
 
 void ReLU::backward() {
     timer_start(TMR_RELU_BW);
 
-    for (int i = 0; i < in->data.size(); i++)
-        if (!mask[i]) in->grad[i] = 0;
+    float *d_in;
+    bool *d_mask;
+    const long unsigned int datasize = in->data.size();
+
+    cudaMalloc(&d_in, datasize * sizeof(float));
+    cudaMalloc(&d_mask, datasize * sizeof(bool));
+
+    cudaMemcpy(d_in, in->grad.data(), datasize * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_mask, mask, datasize * sizeof(bool), cudaMemcpyHostToDevice);
+
+    const int bsize = 128;
+    dim3 numBlocks(bsize, 1);
+    dim3 threadsPerBlock(ceil(float(datasize) / bsize), 1);
+    relu_backward_kernel<<<numBlocks, threadsPerBlock>>>(d_in, d_mask, datasize);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(in->grad.data(), d_in, datasize * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_in);
+    cudaFree(d_mask);
+
+    // for (int i = 0; i < in->data.size(); i++)
+    //     if (!mask[i]) in->grad[i] = 0;
+
     timer_stop(TMR_RELU_BW);
 }
 

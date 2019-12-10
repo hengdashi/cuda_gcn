@@ -6,58 +6,92 @@
 #include <cstdio>
 #include <tuple>
 
+#ifdef __NVCC__
+#include "kernels.cuh"
+#endif
+
 GCNParams GCNParams::get_default() {
     return {2708, 1433, 16, 7, 0.5, 0.01, 5e-4, 100, 0};
 }
 
 GCN::GCN(GCNParams params, GCNData *input_data) {
+
+    #ifdef __NVCC__
+    uint rand_size = 0;
+    #endif
+
     init_rand_state();
     this->params = params;
     data = input_data;
     modules.reserve(8);
     variables.reserve(8);
+
+    // dropout
     variables.emplace_back(data->feature_index.indices.size(), false);
     input = &variables.back();
     modules.push_back(new Dropout(input, params.dropout));
+
+    #ifdef __NVCC__
+    rand_size = std::max(rand_size, (uint)input->data.size());
+    #endif
+
+    // sparsematmul
     variables.emplace_back(params.num_nodes * params.hidden_dim);
     Variable *layer1_var1 = &variables.back();
     variables.emplace_back(params.input_dim * params.hidden_dim, true, true);
     Variable *layer1_weight = &variables.back();
     layer1_weight->glorot(params.input_dim, params.hidden_dim);
-    // sparsematmul
     modules.push_back(new SparseMatmul(input, layer1_weight, layer1_var1, &data->feature_index, params.num_nodes, params.input_dim, params.hidden_dim));
+
+    // graphsum
     variables.emplace_back(params.num_nodes * params.hidden_dim);
     Variable *layer1_var2 = &variables.back();
-    // graphsum
     modules.push_back(new GraphSum(layer1_var1, layer1_var2, &data->graph, params.hidden_dim));
+
     // RELU
     modules.push_back(new ReLU(layer1_var2));
+
     // dropout
     modules.push_back(new Dropout(layer1_var2, params.dropout));
+    #ifdef __NVCC__
+    rand_size = std::max(rand_size, (uint)layer1_var2->data.size());
+    #endif
+
+    // dense matrix multiply
     variables.emplace_back(params.num_nodes * params.output_dim);
     Variable *layer2_var1 = &variables.back();
     variables.emplace_back(params.hidden_dim * params.output_dim, true, true);
     Variable *layer2_weight = &variables.back();
     layer2_weight->glorot(params.hidden_dim, params.output_dim);
-    // dense matrix multiply
     modules.push_back(new Matmul(layer1_var2, layer2_weight, layer2_var1, params.num_nodes, params.hidden_dim, params.output_dim));
+
+    // graph sum
     variables.emplace_back(params.num_nodes * params.output_dim);
     output = &variables.back();
-    // graph sum
     modules.push_back(new GraphSum(layer2_var1, output, &data->graph, params.output_dim));
-    truth = std::vector<int>(params.num_nodes);
+
     // cross entropy loss
+    truth = std::vector<int>(params.num_nodes);
     modules.push_back(new CrossEntropyLoss(output, truth.data(), &loss, params.output_dim));
-    
+
+    // optimizer
     AdamParams adam_params = AdamParams::get_default();
     adam_params.lr = params.learning_rate;
     adam_params.weight_decay = params.weight_decay;
     optimizer = Adam({{layer1_weight, true}, {layer2_weight, false}}, adam_params);
+
+    #ifdef __NVCC__
+    cuda_init_random_state(rand_size);
+    #endif
 }
 
 GCN::~GCN(){
     for(auto m: modules)
         delete m;
+
+    #ifdef __NVCC__
+    cuda_free_random_state();
+    #endif
 }
 
 void GCN::set_input() {

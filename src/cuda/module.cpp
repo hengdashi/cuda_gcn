@@ -5,7 +5,7 @@
 #include <cmath>
 #include <stdio.h>
 
-#ifdef __CUDACC__
+#ifdef __NVCC__
 #include "kernels.cuh"
 #endif
 
@@ -16,10 +16,19 @@ void Matmul::forward(bool training) {
     timer_start(TMR_MATMUL_FW);
     c->zero();
 
+    #ifdef __NVCC__
+
+    cuda_Matmul_forward(a, b, c, m, n, p);
+
+    #else
+
     for (int i = 0; i < m; i++)
         for (int j = 0; j < n; j++)
             for (int k = 0; k < p; k++)
                 c->data[i * p + k] += a->data[i * n + j] * b->data[j * p + k];
+
+    #endif
+
     timer_stop(TMR_MATMUL_FW);
 }
 
@@ -27,6 +36,12 @@ void Matmul::backward() {
     timer_start(TMR_MATMUL_BW);
     a->zero_grad();
     b->zero_grad();
+
+    #ifdef __NVCC__
+
+    cuda_Matmul_backward(a, b, c, m, n, p);
+
+    #else
 
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
@@ -38,6 +53,9 @@ void Matmul::backward() {
 		    a->grad[i * n + j] = tmp;
         }
     }
+
+    #endif
+
     timer_stop(TMR_MATMUL_BW);
 }
 
@@ -61,7 +79,6 @@ void SparseMatmul::forward(bool training) {
 void SparseMatmul::backward() {
     timer_start(TMR_SPMATMUL_BW);
     b->zero_grad();
-    // int row = 0;
 
     for (int i = 0; i < sp->indptr.size() - 1; i++) {
         for (int jj = sp->indptr[i]; jj < sp->indptr[i + 1]; jj++) {
@@ -81,9 +98,9 @@ void GraphSum::forward(bool training) {
     timer_start(TMR_GRAPHSUM_FW);
     out->zero();
 
-    #ifdef __CUDACC__
+    #ifdef __NVCC__
 
-    GraphSum_forward(in, out, graph, dim);
+    cuda_GraphSum_forward(in, out, graph, dim);
 
     #else
 
@@ -108,9 +125,9 @@ void GraphSum::backward() {
     timer_start(TMR_GRAPHSUM_BW);
     in->zero_grad();
 
-    #ifdef __CUDACC__
+    #ifdef __NVCC__
 
-    GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int dim);
+    cuda_GraphSum_backward(in, out, graph, dim);
 
     #else
 
@@ -139,9 +156,9 @@ void CrossEntropyLoss::forward(bool training) {
     int count = 0;
     if (training) logits->zero_grad();
 
-    #ifdef __CUDACC__
-    
-    CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
+    #ifdef __NVCC__
+
+    cuda_CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
 
     #else
 
@@ -175,6 +192,7 @@ void CrossEntropyLoss::forward(bool training) {
         for (int i = 0; i < logits->grad.size(); i++)
             logits->grad[i] /= count;
     }
+
     timer_stop(TMR_LOSS_FW);
 }
 
@@ -193,9 +211,9 @@ ReLU::~ReLU() {
 void ReLU::forward(bool training) {
     timer_start(TMR_RELU_FW);
 
-    #ifdef __CUDACC__
+    #ifdef __NVCC__
 
-    ReLU_forward(in, mask, training);
+    cuda_ReLU_forward(in, mask, training);
 
     #else
 
@@ -205,7 +223,7 @@ void ReLU::forward(bool training) {
         if (!keep) in->data[i] = 0;
     }
 
-    #endif
+    // #endif
 
     timer_stop(TMR_RELU_FW);
 }
@@ -213,16 +231,16 @@ void ReLU::forward(bool training) {
 void ReLU::backward() {
     timer_start(TMR_RELU_BW);
 
-    #ifdef __CUDACC__
+    #ifdef __NVCC__
 
-    ReLU_forward(in, mask, training);
+    cuda_ReLU_backward(in, mask);
 
     #else
 
     for (int i = 0; i < in->data.size(); i++)
         if (!mask[i]) in->grad[i] = 0;
 
-    #endif
+    // #endif
 
     timer_stop(TMR_RELU_BW);
 }
@@ -241,6 +259,13 @@ Dropout::~Dropout() {
 void Dropout::forward(bool training) {
     if (!training) return;
     timer_start(TMR_DROPOUT_FW);
+
+    #ifdef __NVCC__
+
+    cuda_Dropout_forward(in, mask, p);
+
+    #else
+
     const int threshold = int(p * MY_RAND_MAX);
     float scale = 1 / (1 - p);
 
@@ -249,15 +274,28 @@ void Dropout::forward(bool training) {
         in->data[i] *= keep ? scale : 0;
         if (mask) mask[i] = keep;
     }
+
+    #endif
+
     timer_stop(TMR_DROPOUT_FW);
 }
 
 void Dropout::backward() {
     if (!mask) return;
     timer_start(TMR_DROPOUT_BW);
+
+    #ifdef __NVCC__
+
+    cuda_Dropout_backward(in, mask, p);
+
+    #else
+
     float scale = 1 / (1 - p);
 
     for (int i = 0; i < in->data.size(); i++)
         in->grad[i] *= mask[i] ? scale : 0;
+
+    #endif
+
     timer_stop(TMR_DROPOUT_BW);
 }

@@ -10,10 +10,10 @@ HFILES=$(prefix)*.h
 CUDAFILES=$(prefix)*.cu
 CUDAHFILES=$(prefix)*.cuh
 
-seq: $(prefix)main.cpp $(CXXFILES) $(HFILES)
+seq: clean $(prefix)main.cpp $(CXXFILES) $(HFILES)
 	$(CXX) $(CXXFLAGS) -o gcn-seq $(CXXFILES) $(LDFLAGS)
 
-cuda: $(prefix)main.cpp $(CXXFILES) $(CUDAFILES) $(HFILES) $(CUDAHFILES)
+cuda: clean seq $(prefix)main.cpp $(CXXFILES) $(CUDAFILES) $(HFILES) $(CUDAHFILES)
 	nvcc $(CXXFLAGS) -o gcn-cuda $(CXXFILES) $(CUDAFILES) $(LDFLAGS)
 
 clean:

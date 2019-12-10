@@ -1,6 +1,7 @@
 #include "optim.h"
 #include <cmath>
 #include <cstdlib>
+#include <stdio.h>
 
 AdamParams AdamParams::get_default() {
     return {0.001, 0.9, 0.999, 1e-8, 0.0};
@@ -13,17 +14,19 @@ int AdamVariable::size() {
     return data->size();
 }
 
-Adam::Adam(std::vector<std::pair<Variable*, bool>> vars, AdamParams params){
+Adam::Adam(std::vector<std::pair<Variable*, bool>> vars, AdamParams params) {
     step_count = 0;
     this->params = params;
     for (auto v: vars)
         this->vars.emplace_back(v.first, v.second);
 }
 
-void Adam::step(){
+void Adam::step() {
     step_count++;
     float step_size = params.lr * sqrtf(1 - powf(params.beta2, step_count)) / (1 - powf(params.beta1, step_count));
+    // printf("Adam var vector size: %lu\n", vars.size());
     for (auto &var: vars) {
+        // printf("Adam var size: %d\n", var.size());
         for (int i = 0; i < var.size(); i++) {
             float grad = (*var.grad)[i];
             if (var.decay) grad += params.weight_decay * (*var.data)[i];

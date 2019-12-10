@@ -16,18 +16,18 @@ void Matmul::forward(bool training) {
     timer_start(TMR_MATMUL_FW);
     c->zero();
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_Matmul_forward(a, b, c, m, n, p);
+    cuda_Matmul_forward(a, b, c, m, n, p);
 
-    // #else
+    #else
 
     for (int i = 0; i < m; i++)
         for (int j = 0; j < n; j++)
             for (int k = 0; k < p; k++)
                 c->data[i * p + k] += a->data[i * n + j] * b->data[j * p + k];
 
-    // #endif
+    #endif
 
     timer_stop(TMR_MATMUL_FW);
 }
@@ -37,11 +37,11 @@ void Matmul::backward() {
     a->zero_grad();
     b->zero_grad();
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_Matmul_backward(a, b, c, m, n, p);
+    cuda_Matmul_backward(a, b, c, m, n, p);
 
-    // #else
+    #else
 
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
@@ -54,7 +54,7 @@ void Matmul::backward() {
         }
     }
 
-    // #endif
+    #endif
 
     timer_stop(TMR_MATMUL_BW);
 }
@@ -174,11 +174,11 @@ void CrossEntropyLoss::forward(bool training) {
     int count = 0;
     if (training) logits->zero_grad();
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
+    cuda_CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
 
-    // #else
+    #else
 
     for (int i = 0; i < logits->data.size() / num_classes; i++) {
         if (truth[i] < 0) continue;
@@ -203,7 +203,7 @@ void CrossEntropyLoss::forward(bool training) {
         }
     }
 
-    // #endif
+    #endif
 
     *loss = total_loss / count;
     if (training) {
@@ -278,11 +278,11 @@ void Dropout::forward(bool training) {
     if (!training) return;
     timer_start(TMR_DROPOUT_FW);
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_Dropout_forward(in, mask, p);
+    cuda_Dropout_forward(in, mask, p);
 
-    // #else
+    #else
 
     const int threshold = int(p * MY_RAND_MAX);
     float scale = 1 / (1 - p);
@@ -293,7 +293,7 @@ void Dropout::forward(bool training) {
         if (mask) mask[i] = keep;
     }
 
-    // #endif
+    #endif
 
     timer_stop(TMR_DROPOUT_FW);
 }
@@ -302,18 +302,18 @@ void Dropout::backward() {
     if (!mask) return;
     timer_start(TMR_DROPOUT_BW);
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_Dropout_backward(in, mask, p);
+    cuda_Dropout_backward(in, mask, p);
 
-    // #else
+    #else
 
     float scale = 1 / (1 - p);
 
     for (int i = 0; i < in->data.size(); i++)
         in->grad[i] *= mask[i] ? scale : 0;
 
-    // #endif
+    #endif
 
     timer_stop(TMR_DROPOUT_BW);
 }

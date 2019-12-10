@@ -2,13 +2,6 @@
 
 curandState *devStates;
 
-inline void cuda_assert(cudaError_t code, const char *file, int line, bool abort=true) {
-    if (code != cudaSuccess) {
-      fprintf(stderr,"cuda_assert: %s %s %d\n", cudaGetErrorString(code), file, line);
-      if (abort) exit(code);
-    }
-}
-
 // matrix mult
 __global__
 void cuda_Matmul_forward_kernel(const float *a, const float *b, float *c, const uint m, const uint n, const uint p) {
@@ -430,7 +423,7 @@ void cuda_CrossEntropy_forward(Variable *logits, int *truth, float &total_loss, 
 
     // copy data to GPU memory
     cuda_check(cudaMemcpy(d_logits_data, logits_data, logits_data_size, cudaMemcpyHostToDevice));
-    cuda_check(cuda_check(cudaMemcpy(d_logits_grad, logits_grad, logits_grad_size, cudaMemcpyHostToDevice)));
+    cuda_check(cudaMemcpy(d_logits_grad, logits_grad, logits_grad_size, cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_truth, truth, truth_size, cudaMemcpyHostToDevice));
 
     // run kernel function

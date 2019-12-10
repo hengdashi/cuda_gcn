@@ -1,8 +1,9 @@
+#include <vector>
 #include "module.h"
 #include "optim.h"
 #include "variable.h"
-#include <vector>
 #include "parser.h"
+#include <iostream>
 
 using namespace std;
 
@@ -27,6 +28,11 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
+    #ifdef __NVCC__
+    std::cout << "RUNNING ON GPU" << std::endl;
+    #else
+    std::cout << "RUNNING ON CPU" << std::endl;
+    #endif
 
     GCN gcn(params, &data);
     gcn.run();

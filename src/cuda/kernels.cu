@@ -45,6 +45,7 @@ void cuda_Matmul_forward(Variable *a, Variable *b, Variable *c, int m, int n, in
     dim3 block((p-1) / TILE_SIZE + 1, (m-1) / TILE_SIZE + 1, 1);
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
     cuda_Matmul_forward_kernel<<<block, thread_in_block>>>(d_a, d_b, d_c, m, n, p);
+    cudaDeviceSynchronize();
 
     cudaMemcpy(c->data.data(), d_c, m * p * sizeof(float), cudaMemcpyDeviceToHost);
     cudaFree(d_a);
@@ -128,7 +129,9 @@ void cuda_Matmul_backward(Variable *a, Variable *b, Variable *c, int m, int n, i
     dim3 block_b((p-1)/TILE_SIZE+1, (n-1)/TILE_SIZE+1, 1);
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
     cuda_Matmul_backward_A_kernel<<<block_a, thread_in_block>>>(d_a_g, d_b, d_c_g, m, n, p);
+    cudaDeviceSynchronize();
     cuda_Matmul_backward_B_kernel<<<block_b, thread_in_block>>>(d_b_g, d_a, d_c_g, m, n, p);
+    cudaDeviceSynchronize();
 
     cudaMemcpy(a->grad.data(), d_a_g, m * n * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(b->grad.data(), d_b_g, n * p * sizeof(float), cudaMemcpyDeviceToHost);
@@ -327,6 +330,7 @@ void cuda_CrossEntropy_forward(Variable *logits, int *truth, float &total_loss, 
     count = thrust::reduce(count_ptr, count_ptr+(logits->data.size()/num_classes), (int)0, thrust::plus<int>());
     thrust::device_ptr<float> loss_ptr = thrust::device_pointer_cast(d_loss);
     total_loss = thrust::reduce(loss_ptr, loss_ptr+(logits->data.size()/num_classes), (float)0.0, thrust::plus<float>());
+    cudaDeviceSynchronize();
 
     // free memory
     cudaFree(d_logits_data);
@@ -434,6 +438,7 @@ void cuda_Dropout_forward(Variable *in, int *mask, float p) {
     dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_Dropout_forward_kernel<<<block, thread_in_block>>>(d_in, d_mask, devStates, size, p, scale, (mask != nullptr));
+    cudaDeviceSynchronize();
 
     cudaMemcpy(in->data.data(), d_in, size * sizeof(float), cudaMemcpyDeviceToHost);
     if (mask) cudaMemcpy(mask, d_mask, size * sizeof(int), cudaMemcpyDeviceToHost);
@@ -460,6 +465,7 @@ void cuda_Dropout_backward(Variable *in, int *mask, float p) {
     dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_Dropout_backward_kernel<<<block, thread_in_block>>>(d_in_g, d_mask, size, scale);
+    cudaDeviceSynchronize();
 
     cudaMemcpy(in->grad.data(), d_in_g, size * sizeof(float), cudaMemcpyDeviceToHost);
 }
@@ -477,6 +483,7 @@ void cuda_init_random_state(const uint size) {
     dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_init_rand_kernel<<<block,thread_in_block>>>(devStates);
+    cudaDeviceSynchronize();
 }
 
 void cuda_free_random_state() {

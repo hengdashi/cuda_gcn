@@ -223,7 +223,7 @@ void ReLU::forward(bool training) {
         if (!keep) in->data[i] = 0;
     }
 
-    // #endif
+    #endif
 
     timer_stop(TMR_RELU_FW);
 }
@@ -240,7 +240,7 @@ void ReLU::backward() {
     for (int i = 0; i < in->data.size(); i++)
         if (!mask[i]) in->grad[i] = 0;
 
-    // #endif
+    #endif
 
     timer_stop(TMR_RELU_BW);
 }

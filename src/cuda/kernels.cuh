@@ -10,6 +10,9 @@
 #define TILE_SIZE 32
 #define MAX_THREAD_PER_BLOCK 1024
 
+#define cuda_check(ans) { cuda_assert((ans), __FILE__, __LINE__); }
+inline void cuda_assert(cudaError_t code, const char *file, int line, bool abort=true);
+
 // MatMul
 __global__
 void cuda_Matmul_forward_kernel(const float *a, const float *b, float *c, const uint m, const uint n, const uint p);

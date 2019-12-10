@@ -2,6 +2,13 @@
 
 curandState *devStates;
 
+inline void cuda_assert(cudaError_t code, const char *file, int line, bool abort=true) {
+    if (code != cudaSuccess) {
+      fprintf(stderr,"cuda_assert: %s %s %d\n", cudaGetErrorString(code), file, line);
+      if (abort) exit(code);
+    }
+}
+
 // matrix mult
 __global__
 void cuda_Matmul_forward_kernel(const float *a, const float *b, float *c, const uint m, const uint n, const uint p) {
@@ -34,21 +41,29 @@ void cuda_Matmul_forward_kernel(const float *a, const float *b, float *c, const 
 
 void cuda_Matmul_forward(Variable *a, Variable *b, Variable *c, int m, int n, int p) {
     float *d_a, *d_b, *d_c;
-    cudaMalloc((void**) &d_a, m * n * sizeof(float));
-    cudaMemcpy(d_a, a->data.data(), m * n * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMalloc((void**) &d_b, n * p * sizeof(float));
-    cudaMemcpy(d_b, b->data.data(), n * p * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMalloc((void**) &d_c, m * p * sizeof(float));
 
+    cuda_check(cudaMalloc((void**) &d_a, m * n * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_b, n * p * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_c, m * p * sizeof(float)));
+
+    // memcpy
+    cuda_check(cudaMemcpy(d_a, a->data.data(), m * n * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_b, b->data.data(), n * p * sizeof(float), cudaMemcpyHostToDevice));
+
+    // kernel
     dim3 block((p-1) / TILE_SIZE + 1, (m-1) / TILE_SIZE + 1, 1);
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
     cuda_Matmul_forward_kernel<<<block, thread_in_block>>>(d_a, d_b, d_c, m, n, p);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    cudaMemcpy(c->data.data(), d_c, m * p * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaFree(d_a);
-    cudaFree(d_b);
-    cudaFree(d_c);
+    // memcpy
+    cuda_check(cudaMemcpy(c->data.data(), d_c, m * p * sizeof(float), cudaMemcpyDeviceToHost));
+
+    // free
+    cuda_check(cudaFree(d_a));
+    cuda_check(cudaFree(d_b));
+    cuda_check(cudaFree(d_c));
 }
 
 __global__
@@ -112,33 +127,39 @@ void cuda_Matmul_backward_B_kernel(float *b_grad, const float *a, const float *c
 void cuda_Matmul_backward(Variable *a, Variable *b, Variable *c, int m, int n, int p) {
     float *d_a, *d_b, *d_a_g, *d_b_g, *d_c_g;
 
-    cudaMalloc((void**) &d_a, m * n * sizeof(float));
-    cudaMemcpy(d_a, a->data.data(), m * n * sizeof(float), cudaMemcpyHostToDevice);
+    // maloc
+    cuda_check(cudaMalloc((void**) &d_a, m * n * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_b, n * p * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_a_g, m * n * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_b_g, n * p * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_c_g, m * p * sizeof(float)));
 
-    cudaMalloc((void**) &d_b, n * p * sizeof(float));
-    cudaMemcpy(d_b, b->data.data(), n * p * sizeof(float), cudaMemcpyHostToDevice);
+    // memcpy
+    cuda_check(cudaMemcpy(d_a, a->data.data(), m * n * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_b, b->data.data(), n * p * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_c_g, c->grad.data(), m * p * sizeof(float), cudaMemcpyHostToDevice));
 
-    cudaMalloc((void**) &d_a_g, m * n * sizeof(float));
-    cudaMalloc((void**) &d_b_g, n * p * sizeof(float));
-    cudaMalloc((void**) &d_c_g, m * p * sizeof(float));
-    cudaMemcpy(d_c_g, c->grad.data(), m * p * sizeof(float), cudaMemcpyHostToDevice);
-
+    // kernel
     dim3 block_a((n-1)/TILE_SIZE+1, (m-1)/TILE_SIZE+1, 1);
     dim3 block_b((p-1)/TILE_SIZE+1, (n-1)/TILE_SIZE+1, 1);
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
     cuda_Matmul_backward_A_kernel<<<block_a, thread_in_block>>>(d_a_g, d_b, d_c_g, m, n, p);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
     cuda_Matmul_backward_B_kernel<<<block_b, thread_in_block>>>(d_b_g, d_a, d_c_g, m, n, p);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    cudaMemcpy(a->grad.data(), d_a_g, m * n * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(b->grad.data(), d_b_g, n * p * sizeof(float), cudaMemcpyDeviceToHost);
+    // memcpy
+    cuda_check(cudaMemcpy(a->grad.data(), d_a_g, m * n * sizeof(float), cudaMemcpyDeviceToHost));
+    cuda_check(cudaMemcpy(b->grad.data(), d_b_g, n * p * sizeof(float), cudaMemcpyDeviceToHost));
 
-    cudaFree(d_a);
-    cudaFree(d_b);
-    cudaFree(d_a_g);
-    cudaFree(d_b_g);
-    cudaFree(d_c_g);
+    // free
+    cuda_check(cudaFree(d_a));
+    cuda_check(cudaFree(d_b));
+    cuda_check(cudaFree(d_a_g));
+    cuda_check(cudaFree(d_b_g));
+    cuda_check(cudaFree(d_c_g));
 }
 
 
@@ -158,20 +179,23 @@ void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseInde
     float *a_in, *b_in, *c_in;
     int *d_indptr, *d_indices;
 
-    cudaMalloc((void**) &a_in, a->data.size() * sizeof(float));
-    cudaMalloc((void**) &b_in, b->data.size() * sizeof(float));
-    cudaMalloc((void**) &c_in, c->data.size() * sizeof(float));
-    cudaMalloc(&d_indptr, sp->indptr.size() * sizeof(int));
-    cudaMalloc(&d_indices, sp->indices.size() * sizeof(int));
+    // malloc
+    cuda_check(cudaMalloc((void**) &a_in, a->data.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &b_in, b->data.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &c_in, c->data.size() * sizeof(float)));
+    cuda_check(cudaMalloc(&d_indptr, sp->indptr.size() * sizeof(int)));
+    cuda_check(cudaMalloc(&d_indices, sp->indices.size() * sizeof(int)));
 
-    cudaMemcpy(a_in, a->data.data(), a->data.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(b_in, b->data.data(), b->data.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(c_in, c->data.data(), c->data.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indptr, sp->indptr.data(), sp->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indices, sp->indices.data(), sp->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+    // memcpy
+    cuda_check(cudaMemcpy(a_in, a->data.data(), a->data.size() * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(b_in, b->data.data(), b->data.size() * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(c_in, c->data.data(), c->data.size() * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_indptr, sp->indptr.data(), sp->indptr.size() * sizeof(int), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_indices, sp->indices.data(), sp->indices.size() * sizeof(int), cudaMemcpyHostToDevice));
 
     if(sp->indptr.size() <= 1) return;
 
+    // kernel
     dim3 gridsize(sp->indptr.size() - 1, 1);
     dim3 blocksize(p, 1);
 
@@ -181,14 +205,18 @@ void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseInde
     // }
 
     cuda_SparseMatmul_forward_kernel<<<gridsize, blocksize>>>(a_in, b_in, c_in, d_indptr, d_indices, p);
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    cudaMemcpy(c->data.data(), c_in, c->data.size() * sizeof(float), cudaMemcpyDeviceToHost);
+    // memcpy
+    cuda_check(cudaMemcpy(c->data.data(), c_in, c->data.size() * sizeof(float), cudaMemcpyDeviceToHost));
 
-    cudaFree(a_in);
-    cudaFree(b_in);
-    cudaFree(c_in);
-    cudaFree(d_indptr);
-    cudaFree(d_indices);
+    // free
+    cuda_check(cudaFree(a_in));
+    cuda_check(cudaFree(b_in));
+    cuda_check(cudaFree(c_in));
+    cuda_check(cudaFree(d_indptr));
+    cuda_check(cudaFree(d_indices));
 }
 
 __global__
@@ -206,20 +234,23 @@ void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseInd
     float *a_in, *b_in, *c_in;
     int *d_indptr, *d_indices;
 
-    cudaMalloc((void**) &a_in, a->data.size() * sizeof(float));
-    cudaMalloc((void**) &b_in, b->grad.size() * sizeof(float));
-    cudaMalloc((void**) &c_in, c->grad.size() * sizeof(float));
-    cudaMalloc((void**) &d_indptr, sp->indptr.size() * sizeof(int));
-    cudaMalloc((void**) &d_indices, sp->indices.size() * sizeof(int));
+    // malloc
+    cuda_check(cudaMalloc((void**) &a_in, a->data.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &b_in, b->grad.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &c_in, c->grad.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_indptr, sp->indptr.size() * sizeof(int)));
+    cuda_check(cudaMalloc((void**) &d_indices, sp->indices.size() * sizeof(int)));
 
-    cudaMemcpy(a_in, a->data.data(), a->data.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(b_in, b->grad.data(), b->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(c_in, c->grad.data(), c->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indptr, sp->indptr.data(), sp->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indices, sp->indices.data(), sp->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+    // memcpy
+    cuda_check(cudaMemcpy(a_in, a->data.data(), a->data.size() * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(b_in, b->grad.data(), b->grad.size() * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(c_in, c->grad.data(), c->grad.size() * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_indptr, sp->indptr.data(), sp->indptr.size() * sizeof(int), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_indices, sp->indices.data(), sp->indices.size() * sizeof(int), cudaMemcpyHostToDevice));
 
     if(sp->indptr.size() <= 1) return;
 
+    // kernel
     dim3 gridsize(sp->indptr.size() - 1, 1);
     dim3 blocksize(p);
 
@@ -229,14 +260,18 @@ void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseInd
     // }
 
     cuda_SparseMatmul_backward_kernel<<<gridsize, blocksize>>>(a_in, b_in, c_in, d_indptr, d_indices, p);
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    cudaMemcpy(b->grad.data(), b_in, b->grad.size() * sizeof(float), cudaMemcpyDeviceToHost);
+    // memcpy
+    cuda_check(cudaMemcpy(b->grad.data(), b_in, b->grad.size() * sizeof(float), cudaMemcpyDeviceToHost));
 
-    cudaFree(a_in);
-    cudaFree(b_in);
-    cudaFree(c_in);
-    cudaFree(d_indptr);
-    cudaFree(d_indices);
+    // free
+    cuda_check(cudaFree(a_in));
+    cuda_check(cudaFree(b_in));
+    cuda_check(cudaFree(c_in));
+    cuda_check(cudaFree(d_indptr));
+    cuda_check(cudaFree(d_indices));
 }
 
 
@@ -262,15 +297,15 @@ void cuda_GraphSum_forward(Variable *in, Variable *out, SparseIndex *graph, int 
     int *d_indptr, *d_indices;
 
     // allocate memory
-    cudaMalloc((void**) &d_in_data, in->data.size() * sizeof(float));
-    cudaMalloc((void**) &d_out_data, out->data.size() * sizeof(float));
-    cudaMalloc((void**) &d_indptr, graph->indptr.size() * sizeof(int));
-    cudaMalloc((void**) &d_indices, graph->indices.size() * sizeof(int));
+    cuda_check(cudaMalloc((void**) &d_in_data, in->data.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_out_data, out->data.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_indptr, graph->indptr.size() * sizeof(int)));
+    cuda_check(cudaMalloc((void**) &d_indices, graph->indices.size() * sizeof(int)));
 
     // copy memory from host to device
-    cudaMemcpy(d_in_data, in->data.data(), in->data.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indptr, graph->indptr.data(), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cuda_check(cudaMemcpy(d_in_data, in->data.data(), in->data.size() * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_indptr, graph->indptr.data(), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice));
 
     // kernel
     const int numNodes = graph->indptr.size() - 1;
@@ -278,16 +313,17 @@ void cuda_GraphSum_forward(Variable *in, Variable *out, SparseIndex *graph, int 
     dim3 threadsPerBlock(dim, 1);
 
     cuda_GraphSum_forward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_data, d_out_data, d_indptr, d_indices, dim, numNodes);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
     // copy result back to out
-    cudaMemcpy(out->data.data(), d_out_data, out->data.size() * sizeof(float), cudaMemcpyDeviceToHost);
+    cuda_check(cudaMemcpy(out->data.data(), d_out_data, out->data.size() * sizeof(float), cudaMemcpyDeviceToHost));
 
     // free memory
-    cudaFree(d_in_data);
-    cudaFree(d_out_data);
-    cudaFree(d_indptr);
-    cudaFree(d_indices);
+    cuda_check(cudaFree(d_in_data));
+    cuda_check(cudaFree(d_out_data));
+    cuda_check(cudaFree(d_indptr));
+    cuda_check(cudaFree(d_indices));
 }
 
 __global__
@@ -310,15 +346,15 @@ void cuda_GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int
     int *d_indptr, *d_indices;
 
     // allocate memory
-    cudaMalloc((void**) &d_in_grad, in->grad.size() * sizeof(float));
-    cudaMalloc((void**) &d_out_grad, out->grad.size() * sizeof(float));
-    cudaMalloc((void**) &d_indptr, graph->indptr.size() * sizeof(int));
-    cudaMalloc((void**) &d_indices, graph->indices.size() * sizeof(int));
+    cuda_check(cudaMalloc((void**) &d_in_grad, in->grad.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_out_grad, out->grad.size() * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_indptr, graph->indptr.size() * sizeof(int)));
+    cuda_check(cudaMalloc((void**) &d_indices, graph->indices.size() * sizeof(int)));
 
     // copy memory from host to device
-    cudaMemcpy(d_out_grad, out->grad.data(), out->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indptr, graph->indptr.data(), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cuda_check(cudaMemcpy(d_out_grad, out->grad.data(), out->grad.size() * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_indptr, graph->indptr.data(), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice));
 
     // kernel
     const int numNodes = graph->indptr.size() - 1;
@@ -326,16 +362,17 @@ void cuda_GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int
     dim3 threadsPerBlock(dim, 1);
 
     cuda_GraphSum_backward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_grad, d_out_grad, d_indptr, d_indices, dim, numNodes);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    // copy result back to out
-    cudaMemcpy(in->grad.data(), d_in_grad, in->grad.size() * sizeof(float), cudaMemcpyDeviceToHost);
+    // copy result back to host
+    cuda_check(cudaMemcpy(in->grad.data(), d_in_grad, in->grad.size() * sizeof(float), cudaMemcpyDeviceToHost));
 
     // free memory
-    cudaFree(d_in_grad);
-    cudaFree(d_out_grad);
-    cudaFree(d_indptr);
-    cudaFree(d_indices);
+    cuda_check(cudaFree(d_in_grad));
+    cuda_check(cudaFree(d_out_grad));
+    cuda_check(cudaFree(d_indptr));
+    cuda_check(cudaFree(d_indices));
 }
 
 
@@ -371,9 +408,6 @@ void cuda_CrossEntropy_forward(Variable *logits, int *truth, float &total_loss, 
     // grid + block size
     int grid = 32;
     int block = (logits->data.size()/num_classes+32) / 32;
-    // printf("block size: %d\n", block);	
-    // printf("logits data size: %ld\n", logits->data.size());	
-    // printf("num_classes: %d\n", num_classes);
 
     // data structures in GPU:
     float* d_logits_data, *d_loss, *d_logits_grad;
@@ -388,38 +422,40 @@ void cuda_CrossEntropy_forward(Variable *logits, int *truth, float &total_loss, 
     float *logits_grad = logits->grad.data();
 
     // cudaMalloc
-    cudaMalloc(&d_logits_data, logits_data_size);
-    cudaMalloc(&d_logits_grad, logits_grad_size);
-    cudaMalloc(&d_loss, loss_size);
-    cudaMalloc(&d_truth, truth_size);
-    cudaMalloc(&d_count, truth_size);
+    cuda_check(cudaMalloc(&d_logits_data, logits_data_size));
+    cuda_check(cudaMalloc(&d_logits_grad, logits_grad_size));
+    cuda_check(cudaMalloc(&d_loss, loss_size));
+    cuda_check(cudaMalloc(&d_truth, truth_size));
+    cuda_check(cudaMalloc(&d_count, truth_size));
 
     // copy data to GPU memory
-    cudaMemcpy(d_logits_data, logits_data, logits_data_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_logits_grad, logits_grad, logits_grad_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(d_truth, truth, truth_size, cudaMemcpyHostToDevice);
+    cuda_check(cudaMemcpy(d_logits_data, logits_data, logits_data_size, cudaMemcpyHostToDevice));
+    cuda_check(cuda_check(cudaMemcpy(d_logits_grad, logits_grad, logits_grad_size, cudaMemcpyHostToDevice)));
+    cuda_check(cudaMemcpy(d_truth, truth, truth_size, cudaMemcpyHostToDevice));
 
     // run kernel function
     cuda_CrossEntropy_forward_kernel<<< grid, block >>>(d_logits_data, d_logits_grad, training, num_classes, d_truth, d_count, d_loss, logits->data.size());
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
     // updates logits->data and logits->grad in host function
-    cudaMemcpy(&(logits->data[0]), d_logits_data, logits_data_size, cudaMemcpyDeviceToHost);
-    cudaMemcpy(&(logits->grad[0]), d_logits_grad, logits_grad_size, cudaMemcpyDeviceToHost);
+    cuda_check(cudaMemcpy(&(logits->data[0]), d_logits_data, logits_data_size, cudaMemcpyDeviceToHost));
+    cuda_check(cudaMemcpy(&(logits->grad[0]), d_logits_grad, logits_grad_size, cudaMemcpyDeviceToHost));
 
     // accumulate and add count and total_loss variables by thrust::
     thrust::device_ptr<int> count_ptr = thrust::device_pointer_cast(d_count);
     count = thrust::reduce(count_ptr, count_ptr+(logits->data.size()/num_classes), (int)0, thrust::plus<int>());
     thrust::device_ptr<float> loss_ptr = thrust::device_pointer_cast(d_loss);
     total_loss = thrust::reduce(loss_ptr, loss_ptr+(logits->data.size()/num_classes), (float)0.0, thrust::plus<float>());
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
     // free memory
-    cudaFree(d_logits_data);
-    cudaFree(d_logits_grad);
-    cudaFree(d_loss);
-    cudaFree(d_truth);
-    cudaFree(d_count);
+    cuda_check(cudaFree(d_logits_data));
+    cuda_check(cudaFree(d_logits_grad));
+    cuda_check(cudaFree(d_loss));
+    cuda_check(cudaFree(d_truth));
+    cuda_check(cudaFree(d_count));
 }
 
 
@@ -439,13 +475,15 @@ void cuda_ReLU_forward(Variable *in, bool *mask, bool training) {
     bool *d_mask;
     const long unsigned int datasize = in->data.size();
 
-    cudaMalloc(&d_in_data, datasize * sizeof(float));
-    cudaMalloc(&d_mask, datasize * sizeof(bool));
+    // malloc
+    cuda_check(cudaMalloc(&d_in_data, datasize * sizeof(float)));
+    cuda_check(cudaMalloc(&d_mask, datasize * sizeof(bool)));
 
-    cudaMemcpy(d_in_data, in->data.data(), datasize * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_mask, mask, datasize * sizeof(bool), cudaMemcpyHostToDevice);
-    // printf("ReLU data size %lu\n", in->data.size());
+    // memcpy
+    cuda_check(cudaMemcpy(d_in_data, in->data.data(), datasize * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_mask, mask, datasize * sizeof(bool), cudaMemcpyHostToDevice));
 
+    // kernel
     dim3 numBlocks(1, 1);
     dim3 threadsPerBlock(datasize, 1);
     if (datasize > MAX_THREAD_PER_BLOCK) {
@@ -453,13 +491,16 @@ void cuda_ReLU_forward(Variable *in, bool *mask, bool training) {
         numBlocks.x = ceil(float(datasize) / threadsPerBlock.x);
     }
     cuda_ReLU_forward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_data, d_mask, datasize, training);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    cudaMemcpy(in->data.data(), d_in_data, datasize * sizeof(float), cudaMemcpyDeviceToHost);
-    cudaMemcpy(mask, d_mask, datasize * sizeof(bool), cudaMemcpyDeviceToHost);
+    // memcpy
+    cuda_check(cudaMemcpy(in->data.data(), d_in_data, datasize * sizeof(float), cudaMemcpyDeviceToHost));
+    cuda_check(cudaMemcpy(mask, d_mask, datasize * sizeof(bool), cudaMemcpyDeviceToHost));
 
-    cudaFree(d_in_data);
-    cudaFree(d_mask);
+    // free
+    cuda_check(cudaFree(d_in_data));
+    cuda_check(cudaFree(d_mask));
 }
 
 __global__
@@ -476,11 +517,13 @@ void cuda_ReLU_backward(Variable *in, bool *mask) {
     bool *d_mask;
     const long unsigned int datasize = in->data.size();
 
-    cudaMalloc(&d_in_grad, datasize * sizeof(float));
-    cudaMalloc(&d_mask, datasize * sizeof(bool));
+    // malloc
+    cuda_check(cudaMalloc(&d_in_grad, datasize * sizeof(float)));
+    cuda_check(cudaMalloc(&d_mask, datasize * sizeof(bool)));
 
-    cudaMemcpy(d_in_grad, in->grad.data(), datasize * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_mask, mask, datasize * sizeof(bool), cudaMemcpyHostToDevice);
+    // memcpy
+    cuda_check(cudaMemcpy(d_in_grad, in->grad.data(), datasize * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_mask, mask, datasize * sizeof(bool), cudaMemcpyHostToDevice));
 
     dim3 numBlocks(1, 1);
     dim3 threadsPerBlock(datasize, 1);
@@ -489,12 +532,15 @@ void cuda_ReLU_backward(Variable *in, bool *mask) {
         numBlocks.x = ceil(float(datasize) / threadsPerBlock.x);
     }
     cuda_ReLU_backward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_grad, d_mask, datasize);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    cudaMemcpy(in->grad.data(), d_in_grad, datasize * sizeof(float), cudaMemcpyDeviceToHost);
+    // memcpy
+    cuda_check(cudaMemcpy(in->grad.data(), d_in_grad, datasize * sizeof(float), cudaMemcpyDeviceToHost));
 
-    cudaFree(d_in_grad);
-    cudaFree(d_mask);
+    // freee
+    cuda_check(cudaFree(d_in_grad));
+    cuda_check(cudaFree(d_mask));
 }
 
 
@@ -513,23 +559,33 @@ void cuda_Dropout_forward_kernel(float *in, int *mask, curandState *state, const
 }
 
 void cuda_Dropout_forward(Variable *in, int *mask, float p) {
+    float scale = 1 / (1 - p);
     int size = in->data.size();
+
     float *d_in;
     int *d_mask;
 
-    cudaMalloc((void**) &d_in, size * sizeof(float));
-    cudaMemcpy(d_in, in->data.data(), size * sizeof(float), cudaMemcpyHostToDevice);
-
+    // malloc
+    cuda_check(cudaMalloc((void**) &d_in, size * sizeof(float)));
     if (mask) cudaMalloc((void**) &d_mask, size * sizeof(int));
 
-    float scale = 1 / (1 - p);
+    // memcpy
+    cuda_check(cudaMemcpy(d_in, in->data.data(), size * sizeof(float), cudaMemcpyHostToDevice));
+
+    // kernel
     dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_Dropout_forward_kernel<<<block, thread_in_block>>>(d_in, d_mask, devStates, size, p, scale, (mask != nullptr));
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    cudaMemcpy(in->data.data(), d_in, size * sizeof(float), cudaMemcpyDeviceToHost);
-    if (mask) cudaMemcpy(mask, d_mask, size * sizeof(int), cudaMemcpyDeviceToHost);
+    // memcpy
+    cuda_check(cudaMemcpy(in->data.data(), d_in, size * sizeof(float), cudaMemcpyDeviceToHost));
+    if (mask) cuda_check(cudaMemcpy(mask, d_mask, size * sizeof(int), cudaMemcpyDeviceToHost));
+
+    // free
+    cuda_check(cudaFree(d_in));
+    if (mask) cuda_check(cudaFree(d_mask));
 }
 
 __global__
@@ -540,22 +596,33 @@ void cuda_Dropout_backward_kernel(float *in_grad, const int *mask, const uint si
 }
 
 void cuda_Dropout_backward(Variable *in, int *mask, float p) {
+    float scale = 1 / (1 - p);
     uint size = in->data.size();
+
     float *d_in_g;
     int *d_mask;
 
-    cudaMalloc((void**) &d_in_g, size * sizeof(float));
-    cudaMemcpy(d_in_g, in->grad.data(), size * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMalloc((void**) &d_mask, size * sizeof(int));
-    cudaMemcpy(d_mask, mask, size * sizeof(int), cudaMemcpyHostToDevice);
+    // malloc
+    cuda_check(cudaMalloc((void**) &d_in_g, size * sizeof(float)));
+    cuda_check(cudaMalloc((void**) &d_mask, size * sizeof(int)));
 
-    float scale = 1 / (1 - p);
+    // memcpy
+    cuda_check(cudaMemcpy(d_in_g, in->grad.data(), size * sizeof(float), cudaMemcpyHostToDevice));
+    cuda_check(cudaMemcpy(d_mask, mask, size * sizeof(int), cudaMemcpyHostToDevice));
+
+    // kernel
     dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_Dropout_backward_kernel<<<block, thread_in_block>>>(d_in_g, d_mask, size, scale);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
-    cudaMemcpy(in->grad.data(), d_in_g, size * sizeof(float), cudaMemcpyDeviceToHost);
+    // memcpy
+    cuda_check(cudaMemcpy(in->grad.data(), d_in_g, size * sizeof(float), cudaMemcpyDeviceToHost));
+
+    // free
+    cuda_check(cudaFree(d_in_g));
+    cuda_check(cudaFree(d_mask));
 }
 
 
@@ -567,15 +634,21 @@ void cuda_init_rand_kernel(curandState *state) {
 }
 
 void cuda_init_random_state(const uint size) {
-    cudaMalloc((void**) &devStates, size * sizeof(curandState));
+    // malloc
+    cuda_check(cudaMalloc((void**) &devStates, size * sizeof(curandState)));
+
     dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
+
+    // kernel
     cuda_init_rand_kernel<<<block,thread_in_block>>>(devStates);
-    cudaDeviceSynchronize();
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 }
 
 void cuda_free_random_state() {
-    cudaFree(devStates);
+    // free
+    cuda_check(cudaFree(devStates));
 }
 
 
@@ -615,6 +688,8 @@ void cuda_Adam_step(AdamVariable &var, AdamParams params, float step_size) {
     }
 
     cuda_Adam_step_kernel<<<gridsize, blocksize>>>(d_grad, d_data, d_m, d_v, var.decay, params.weight_decay, params.beta1, params.beta2, params.eps, step_size, var.size());
+    cuda_check(cudaGetLastError());
+    cuda_check(cudaDeviceSynchronize());
 
     cudaMemcpy(var.m.data(), d_m, var.m.size() * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(var.v.data(), d_v, var.v.size() * sizeof(float), cudaMemcpyDeviceToHost);

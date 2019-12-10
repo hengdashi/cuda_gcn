@@ -531,7 +531,7 @@ void cuda_ReLU_backward(Variable *in, bool *mask) {
     // memcpy
     cuda_check(cudaMemcpy(in->grad.data(), d_in_grad, datasize * sizeof(float), cudaMemcpyDeviceToHost));
 
-    // freee
+    // free
     cuda_check(cudaFree(d_in_grad));
     cuda_check(cudaFree(d_mask));
 }

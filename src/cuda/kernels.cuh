@@ -22,6 +22,18 @@ void cuda_Matmul_backward_B_kernel(float *b_grad, const float *a, const float *c
 void cuda_Matmul_backward(Variable *a, Variable *b, Variable *c, int m, int n, int p);
 
 
+// Sparse Mat Mul
+__global__
+void cuda_SparseMatmul_forward_kernel(float *a_in, float *b_in, float *c_in, int *indptr, int *indices, int p);
+
+void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int p);
+
+__global__
+void cuda_SparseMatmul_backward_kernel(float *a_in, float *b_in, float *c_in, int *indptr, int *indices, int p);
+
+void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int p);
+
+
 // GraphSum
 __global__
 void cuda_GraphSum_forward_kernel(float *d_in_data, float *d_out_data, int *d_indptr, int *d_indices, int dim, int numNodes);

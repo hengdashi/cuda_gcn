@@ -144,6 +144,104 @@ void cuda_Matmul_backward(Variable *a, Variable *b, Variable *c, int m, int n, i
 }
 
 
+// sparse matmul
+__global__
+void cuda_SparseMatmul_forward_kernel(float *a_in, float *b_in, float *c_in, int *indptr, int *indices, int p) {
+    int blockx = blockIdx.x;
+    int threadx = blockIdx.y * 1024 + threadIdx.x;
+    
+    for (int jj = indptr[blockx]; jj < indptr[blockx + 1]; jj++){
+        int j = indices[jj];
+        c_in[blockx * p + threadx] += a_in[jj] * b_in[j * p + threadx];
+    }
+}
+
+void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int p) {
+    float *a_in, *b_in, *c_in;
+    int *d_indptr, *d_indices;
+
+    cudaMalloc((void**) &a_in, a->data.size() * sizeof(float));
+    cudaMalloc((void**) &b_in, b->data.size() * sizeof(float));
+    cudaMalloc((void**) &c_in, c->data.size() * sizeof(float));
+    cudaMalloc(&d_indptr, sp->indptr.size() * sizeof(int));
+    cudaMalloc(&d_indices, sp->indices.size() * sizeof(int));
+
+    cudaMemcpy(a_in, a->data.data(), a->data.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(b_in, b->data.data(), b->data.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(c_in, c->data.data(), c->data.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indptr, sp->indptr.data(), sp->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indices, sp->indices.data(), sp->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+    if(sp->indptr.size() <= 1) return;
+
+    dim3 gridsize(sp->indptr.size() - 1, 1);
+    dim3 blocksize(p);
+
+    if(p > 1024) {
+        blocksize.x = 1024;
+        gridsize.y = ceil((float)p / (float)blocksize.x);
+    }
+
+    cuda_SparseMatmul_forward_kernel<<<gridsize, blocksize>>>(a_in, b_in, c_in, d_indptr, d_indices, p);
+
+    cudaMemcpy(c->data.data(), c_in, c->data.size() * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(a_in);
+    cudaFree(b_in);
+    cudaFree(c_in);
+    cudaFree(d_indptr);
+    cudaFree(d_indices);
+}
+
+__global__
+void cuda_SparseMatmul_backward_kernel(float *a_in, float *b_in, float *c_in, int *indptr, int *indices, int p) {
+    int blockx = blockIdx.x;
+    int threadx = blockIdx.y * 1024 + threadIdx.x;
+    
+    for (int jj = indptr[blockx]; jj < indptr[blockx + 1]; jj++){
+        int j = indices[jj];
+        b_in[j * p + threadx] += c_in[blockx * p + threadx] * a_in[jj];
+    }
+}
+
+void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int p) {
+    float *a_in, *b_in, *c_in;
+    int *d_indptr, *d_indices;
+
+    cudaMalloc((void**) &a_in, a->data.size() * sizeof(float));
+    cudaMalloc((void**) &b_in, b->grad.size() * sizeof(float));
+    cudaMalloc((void**) &c_in, c->grad.size() * sizeof(float));
+    cudaMalloc((void**) &d_indptr, sp->indptr.size() * sizeof(int));
+    cudaMalloc((void**) &d_indices, sp->indices.size() * sizeof(int));
+
+    cudaMemcpy(a_in, a->data.data(), a->data.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(b_in, b->grad.data(), b->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(c_in, c->grad.data(), c->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indptr, sp->indptr.data(), sp->indptr.size() * sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_indices, sp->indices.data(), sp->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
+
+    if(sp->indptr.size() <= 1) return;
+
+    dim3 gridsize(sp->indptr.size() - 1, 1);
+    dim3 blocksize(p);
+
+    if(p > 1024) {
+        blocksize.x = 1024;
+        gridsize.y = ceil((double)p / (double) blocksize.x);
+    }
+
+    cuda_SparseMatmul_backward_kernel<<<gridsize, blocksize>>>(a_in, b_in, c_in, d_indptr, d_indices, p);
+
+    cudaMemcpy(b->grad.data(), b_in, b->grad.size() * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(a_in);
+    cudaFree(b_in);
+    cudaFree(c_in);
+    cudaFree(d_indptr);
+    cudaFree(d_indices);
+}
+
+
 // graph sum
 __global__
 void cuda_GraphSum_forward_kernel(float *d_in_data, float *d_out_data, int *d_indptr, int *d_indices, int dim, int numNodes) {

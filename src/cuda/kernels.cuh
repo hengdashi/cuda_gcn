@@ -1,8 +1,8 @@
 #ifndef KERNELS_CUH
 #define KERNELS_CUH
 
+#include "optim.h"
 #include "sparse.h"
-#include "variable.h"
 #include <thrust/extrema.h>
 #include <thrust/device_ptr.h>
 #include <curand_kernel.h>
@@ -86,5 +86,13 @@ void cuda_init_rand_kernel(curandState *state);
 
 void cuda_init_random_state(const uint size);
 void cuda_free_random_state();
+
+
+// adam
+__global__
+void cuda_Adam_step_kernel(float* grad, float* data, float* m, float* v, bool decay, float weight_decay, float beta1, float beta2, float eps, float step_size);
+
+void cuda_Adam_step(AdamVariable &var, AdamParams params, float step_size);
+
 
 #endif

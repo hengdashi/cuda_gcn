@@ -146,7 +146,7 @@ void cuda_Matmul_backward(Variable *a, Variable *b, Variable *c, int m, int n, i
 __global__
 void cuda_SparseMatmul_forward_kernel(float *a_in, float *b_in, float *c_in, int *indptr, int *indices, int p) {
     int i = blockIdx.x;
-    int k = blockIdx.y * MAX_THREAD_PER_BLOCK + threadIdx.x;
+    int k = threadIdx.x;
     
     for (int jj = indptr[i]; jj < indptr[i + 1]; jj++){
         int j = indices[jj];
@@ -173,12 +173,12 @@ void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseInde
     if(sp->indptr.size() <= 1) return;
 
     dim3 gridsize(sp->indptr.size() - 1, 1);
-    dim3 blocksize(p);
+    dim3 blocksize(p, 1);
 
-    if(p > MAX_THREAD_PER_BLOCK) {
-        blocksize.x = MAX_THREAD_PER_BLOCK;
-        gridsize.y = ceil((float)p / (float)blocksize.x);
-    }
+    // if(p > MAX_THREAD_PER_BLOCK) {
+    //     blocksize.x = MAX_THREAD_PER_BLOCK;
+    //     gridsize.y = ceil((float)p / (float)blocksize.x);
+    // }
 
     cuda_SparseMatmul_forward_kernel<<<gridsize, blocksize>>>(a_in, b_in, c_in, d_indptr, d_indices, p);
 
@@ -194,7 +194,7 @@ void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseInde
 __global__
 void cuda_SparseMatmul_backward_kernel(float *a_in, float *b_in, float *c_in, int *indptr, int *indices, int p) {
     int i = blockIdx.x;
-    int k = blockIdx.y * MAX_THREAD_PER_BLOCK + threadIdx.x;
+    int k = threadIdx.x;
     
     for (int jj = indptr[i]; jj < indptr[i + 1]; jj++){
         int j = indices[jj];
@@ -223,10 +223,10 @@ void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseInd
     dim3 gridsize(sp->indptr.size() - 1, 1);
     dim3 blocksize(p);
 
-    if(p > MAX_THREAD_PER_BLOCK) {
-        blocksize.x = MAX_THREAD_PER_BLOCK;
-        gridsize.y = ceil((double)p / (double) blocksize.x);
-    }
+    // if(p > MAX_THREAD_PER_BLOCK) {
+    //     blocksize.x = MAX_THREAD_PER_BLOCK;
+    //     gridsize.y = ceil((double)p / (double) blocksize.x);
+    // }
 
     cuda_SparseMatmul_backward_kernel<<<gridsize, blocksize>>>(a_in, b_in, c_in, d_indptr, d_indices, p);
 
@@ -244,7 +244,7 @@ void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseInd
 __global__
 void cuda_GraphSum_forward_kernel(float *d_in_data, float *d_out_data, int *d_indptr, int *d_indices, int dim, int numNodes) {
     int src = blockIdx.x;
-    int j = blockIdx.y * MAX_THREAD_PER_BLOCK + threadIdx.x;
+    int j = threadIdx.x;
 
     for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
         int dst = d_indices[i];
@@ -277,11 +277,6 @@ void cuda_GraphSum_forward(Variable *in, Variable *out, SparseIndex *graph, int 
     dim3 numBlocks(numNodes, 1);
     dim3 threadsPerBlock(dim, 1);
 
-    if(dim > MAX_THREAD_PER_BLOCK) {
-        numBlocks.x = MAX_THREAD_PER_BLOCK;
-        threadsPerBlock.y = ceil((float)dim / (float)numBlocks.x);
-    }
-
     cuda_GraphSum_forward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_data, d_out_data, d_indptr, d_indices, dim, numNodes);
     cudaDeviceSynchronize();
 
@@ -298,9 +293,8 @@ void cuda_GraphSum_forward(Variable *in, Variable *out, SparseIndex *graph, int 
 __global__
 void cuda_GraphSum_backward_kernel(float *d_in_grad, float *d_out_grad, int *d_indptr, int *d_indices, int dim, int numNodes) {
     int src = blockIdx.x;
-    int j = blockIdx.y * MAX_THREAD_PER_BLOCK + threadIdx.x;
+    int j = threadIdx.x;
 
-    // for (int src = 0; src < numNodes; ++src) {
     for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
         int dst = d_indices[i];
         float coef = 1.0 / sqrtf(
@@ -309,7 +303,6 @@ void cuda_GraphSum_backward_kernel(float *d_in_grad, float *d_out_grad, int *d_i
         // This only works for undirected graphs. Should be out[dst] += coef * in[src]
         d_in_grad[src * dim + j] += coef * d_out_grad[dst * dim + j];
     }
-    // }
 }
 
 void cuda_GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int dim) {
@@ -331,11 +324,6 @@ void cuda_GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int
     const int numNodes = graph->indptr.size() - 1;
     dim3 numBlocks(numNodes, 1);
     dim3 threadsPerBlock(dim, 1);
-
-    if(dim > MAX_THREAD_PER_BLOCK) {
-        numBlocks.x = MAX_THREAD_PER_BLOCK;
-        threadsPerBlock.y = ceil((float)dim / (float)numBlocks.x);
-    }
 
     cuda_GraphSum_backward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_grad, d_out_grad, d_indptr, d_indices, dim, numNodes);
     cudaDeviceSynchronize();
@@ -458,9 +446,12 @@ void cuda_ReLU_forward(Variable *in, bool *mask, bool training) {
     cudaMemcpy(d_mask, mask, datasize * sizeof(bool), cudaMemcpyHostToDevice);
     // printf("ReLU data size %lu\n", in->data.size());
 
-    const int bsize = 128;
-    dim3 numBlocks(bsize, 1);
-    dim3 threadsPerBlock(ceil(float(datasize) / bsize), 1);
+    dim3 numBlocks(1, 1);
+    dim3 threadsPerBlock(datasize, 1);
+    if (datasize > MAX_THREAD_PER_BLOCK) {
+        threadsPerBlock.x = MAX_THREAD_PER_BLOCK;
+        numBlocks.x = ceil(float(datasize) / threadsPerBlock.x);
+    }
     cuda_ReLU_forward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_data, d_mask, datasize, training);
     cudaDeviceSynchronize();
 
@@ -491,9 +482,12 @@ void cuda_ReLU_backward(Variable *in, bool *mask) {
     cudaMemcpy(d_in_grad, in->grad.data(), datasize * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_mask, mask, datasize * sizeof(bool), cudaMemcpyHostToDevice);
 
-    const int bsize = 128;
-    dim3 numBlocks(bsize, 1);
-    dim3 threadsPerBlock(ceil(float(datasize) / bsize), 1);
+    dim3 numBlocks(1, 1);
+    dim3 threadsPerBlock(datasize, 1);
+    if (datasize > MAX_THREAD_PER_BLOCK) {
+        threadsPerBlock.x = MAX_THREAD_PER_BLOCK;
+        numBlocks.x = ceil(float(datasize) / threadsPerBlock.x);
+    }
     cuda_ReLU_backward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_grad, d_mask, datasize);
     cudaDeviceSynchronize();
 
@@ -582,4 +576,52 @@ void cuda_init_random_state(const uint size) {
 
 void cuda_free_random_state() {
     cudaFree(devStates);
+}
+
+
+// adam
+__global__
+void cuda_Adam_step_kernel(float* grad, float* data, float* m, float* v, bool decay, float weight_decay, float beta1, float beta2, float eps, float step_size, int varsize) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (i >= varsize) return;
+
+    float g = grad[i];
+    if (decay) g += weight_decay * data[i];
+    m[i] = beta1 * m[i] + (1.0 - beta1) * g;
+    v[i] = beta2 * v[i] + (1.0 - beta2) * g * g;
+    data[i] -= step_size * m[i] / (sqrtf(v[i]) + eps);
+}
+
+void cuda_Adam_step(AdamVariable &var, AdamParams params, float step_size) {
+    float *d_grad, *d_data, *d_m, *d_v;
+
+    cudaMalloc((void**) &d_grad, (*var.grad).size() * sizeof(float));
+    cudaMalloc((void**) &d_data, (*var.data).size() * sizeof(float));
+    cudaMalloc((void**) &d_m, var.m.size() * sizeof(float));
+    cudaMalloc((void**) &d_v, var.v.size() * sizeof(float));
+
+    cudaMemcpy(d_grad, (*var.grad).data(), (*var.grad).size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_data, (*var.data).data(), (*var.data).size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_m, var.m.data(), var.m.size() * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_v, var.v.data(), var.v.size() * sizeof(float), cudaMemcpyHostToDevice);
+
+    dim3 gridsize(1, 1);
+    dim3 blocksize(var.size(), 1);
+
+    if(var.size() > MAX_THREAD_PER_BLOCK) {
+        blocksize.x = MAX_THREAD_PER_BLOCK;
+        gridsize.x = ceil(float(var.size()) / blocksize.x);
+    }
+
+    cuda_Adam_step_kernel<<<gridsize, blocksize>>>(d_grad, d_data, d_m, d_v, var.decay, params.weight_decay, params.beta1, params.beta2, params.eps, step_size, var.size());
+
+    cudaMemcpy(var.m.data(), d_m, var.m.size() * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(var.v.data(), d_v, var.v.size() * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy((*var.data).data(), d_data, (*var.data).size() * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_grad);
+    cudaFree(d_data);
+    cudaFree(d_m);
+    cudaFree(d_v);
 }

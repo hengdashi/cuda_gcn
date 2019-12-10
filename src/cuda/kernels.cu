@@ -1,8 +1,6 @@
 #include "kernels.cuh"
 
 curandState *devStates;
-#define TILE_SIZE 32
-#define MAX_THREAD_PER_BLOCK 1024
 
 // matrix mult
 __global__
@@ -147,12 +145,12 @@ void cuda_Matmul_backward(Variable *a, Variable *b, Variable *c, int m, int n, i
 // sparse matmul
 __global__
 void cuda_SparseMatmul_forward_kernel(float *a_in, float *b_in, float *c_in, int *indptr, int *indices, int p) {
-    int blockx = blockIdx.x;
-    int threadx = blockIdx.y * 1024 + threadIdx.x;
+    int i = blockIdx.x;
+    int k = blockIdx.y * MAX_THREAD_PER_BLOCK + threadIdx.x;
     
-    for (int jj = indptr[blockx]; jj < indptr[blockx + 1]; jj++){
+    for (int jj = indptr[i]; jj < indptr[i + 1]; jj++){
         int j = indices[jj];
-        c_in[blockx * p + threadx] += a_in[jj] * b_in[j * p + threadx];
+        c_in[i * p + k] += a_in[jj] * b_in[j * p + k];
     }
 }
 
@@ -177,8 +175,8 @@ void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseInde
     dim3 gridsize(sp->indptr.size() - 1, 1);
     dim3 blocksize(p);
 
-    if(p > 1024) {
-        blocksize.x = 1024;
+    if(p > MAX_THREAD_PER_BLOCK) {
+        blocksize.x = MAX_THREAD_PER_BLOCK;
         gridsize.y = ceil((float)p / (float)blocksize.x);
     }
 
@@ -195,12 +193,12 @@ void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseInde
 
 __global__
 void cuda_SparseMatmul_backward_kernel(float *a_in, float *b_in, float *c_in, int *indptr, int *indices, int p) {
-    int blockx = blockIdx.x;
-    int threadx = blockIdx.y * 1024 + threadIdx.x;
+    int i = blockIdx.x;
+    int k = blockIdx.y * MAX_THREAD_PER_BLOCK + threadIdx.x;
     
-    for (int jj = indptr[blockx]; jj < indptr[blockx + 1]; jj++){
+    for (int jj = indptr[i]; jj < indptr[i + 1]; jj++){
         int j = indices[jj];
-        b_in[j * p + threadx] += c_in[blockx * p + threadx] * a_in[jj];
+        b_in[j * p + k] += c_in[i * p + k] * a_in[jj];
     }
 }
 
@@ -225,8 +223,8 @@ void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseInd
     dim3 gridsize(sp->indptr.size() - 1, 1);
     dim3 blocksize(p);
 
-    if(p > 1024) {
-        blocksize.x = 1024;
+    if(p > MAX_THREAD_PER_BLOCK) {
+        blocksize.x = MAX_THREAD_PER_BLOCK;
         gridsize.y = ceil((double)p / (double) blocksize.x);
     }
 
@@ -245,22 +243,16 @@ void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseInd
 // graph sum
 __global__
 void cuda_GraphSum_forward_kernel(float *d_in_data, float *d_out_data, int *d_indptr, int *d_indices, int dim, int numNodes) {
-    // printf("graphsum forward loop count: %lu\n", nodecount);
-    uint src = (blockIdx.x * blockDim.x) + threadIdx.x;
-    // printf("src: %u\n", src);
-    if (src >= numNodes) return;
-    // printf("src: %d, i: %d, size: %d\n", src, d_indptr[src], d_indptr[src + 1]);
-    // for (int src = 0; src < numNodes; ++src) {
+    int src = blockIdx.x;
+    int j = blockIdx.y * MAX_THREAD_PER_BLOCK + threadIdx.x;
+
     for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
         int dst = d_indices[i];
         float coef = 1.0 / sqrtf(
                 (d_indptr[src + 1] - d_indptr[src]) * (d_indptr[dst + 1] - d_indptr[dst])
         );
-        // printf("dim: %d\n", dim);
-        for (int j = 0; j < dim; j++) {
-            // This only works for undirected graphs. Should be out[dst] += coef * in[src]
-            d_out_data[src * dim + j] += coef * d_in_data[dst * dim + j];
-        }
+        // This only works for undirected graphs. Should be out[dst] += coef * in[src]
+        d_out_data[src * dim + j] += coef * d_in_data[dst * dim + j];
     }
     // }
 }
@@ -270,10 +262,10 @@ void cuda_GraphSum_forward(Variable *in, Variable *out, SparseIndex *graph, int 
     int *d_indptr, *d_indices;
 
     // allocate memory
-    cudaMalloc(&d_in_data, in->data.size() * sizeof(float));
-    cudaMalloc(&d_out_data, out->data.size() * sizeof(float));
-    cudaMalloc(&d_indptr, graph->indptr.size() * sizeof(int));
-    cudaMalloc(&d_indices, graph->indices.size() * sizeof(int));
+    cudaMalloc((void**) &d_in_data, in->data.size() * sizeof(float));
+    cudaMalloc((void**) &d_out_data, out->data.size() * sizeof(float));
+    cudaMalloc((void**) &d_indptr, graph->indptr.size() * sizeof(int));
+    cudaMalloc((void**) &d_indices, graph->indices.size() * sizeof(int));
 
     // copy memory from host to device
     cudaMemcpy(d_in_data, in->data.data(), in->data.size() * sizeof(float), cudaMemcpyHostToDevice);
@@ -281,13 +273,15 @@ void cuda_GraphSum_forward(Variable *in, Variable *out, SparseIndex *graph, int 
     cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice);
 
     // kernel
-    // printf("size of indptr: %lu\n", graph->indptr.size());
     const int numNodes = graph->indptr.size() - 1;
-    const int bsize = 32;
-    dim3 numBlocks(bsize, 1);
-    dim3 threadsPerBlock(ceil(float(numNodes)/bsize), 1);
-    // dim3 numBlocks(1, 1);
-    // dim3 threadsPerBlock(1, 1);
+    dim3 numBlocks(numNodes, 1);
+    dim3 threadsPerBlock(dim, 1);
+
+    if(dim > MAX_THREAD_PER_BLOCK) {
+        numBlocks.x = MAX_THREAD_PER_BLOCK;
+        threadsPerBlock.y = ceil((float)dim / (float)numBlocks.x);
+    }
+
     cuda_GraphSum_forward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_data, d_out_data, d_indptr, d_indices, dim, numNodes);
     cudaDeviceSynchronize();
 
@@ -303,9 +297,8 @@ void cuda_GraphSum_forward(Variable *in, Variable *out, SparseIndex *graph, int 
 
 __global__
 void cuda_GraphSum_backward_kernel(float *d_in_grad, float *d_out_grad, int *d_indptr, int *d_indices, int dim, int numNodes) {
-    // printf("graphsum backward loop count: %lu\n", nodecount);
-    uint src = (blockIdx.x * blockDim.x) + threadIdx.x;
-    if (src >= numNodes) return;
+    int src = blockIdx.x;
+    int j = blockIdx.y * MAX_THREAD_PER_BLOCK + threadIdx.x;
 
     // for (int src = 0; src < numNodes; ++src) {
     for (int i = d_indptr[src]; i < d_indptr[src + 1]; i++) {
@@ -313,10 +306,8 @@ void cuda_GraphSum_backward_kernel(float *d_in_grad, float *d_out_grad, int *d_i
         float coef = 1.0 / sqrtf(
                 (d_indptr[src + 1] - d_indptr[src]) * (d_indptr[dst + 1] - d_indptr[dst])
         );
-        for (int j = 0; j < dim; j++) {
-            // This only works for undirected graphs. Should be out[dst] += coef * in[src]
-            d_in_grad[src * dim + j] += coef * d_out_grad[dst * dim + j];
-        }
+        // This only works for undirected graphs. Should be out[dst] += coef * in[src]
+        d_in_grad[src * dim + j] += coef * d_out_grad[dst * dim + j];
     }
     // }
 }
@@ -326,10 +317,10 @@ void cuda_GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int
     int *d_indptr, *d_indices;
 
     // allocate memory
-    cudaMalloc(&d_in_grad, in->grad.size() * sizeof(float));
-    cudaMalloc(&d_out_grad, out->grad.size() * sizeof(float));
-    cudaMalloc(&d_indptr, graph->indptr.size() * sizeof(int));
-    cudaMalloc(&d_indices, graph->indices.size() * sizeof(int));
+    cudaMalloc((void**) &d_in_grad, in->grad.size() * sizeof(float));
+    cudaMalloc((void**) &d_out_grad, out->grad.size() * sizeof(float));
+    cudaMalloc((void**) &d_indptr, graph->indptr.size() * sizeof(int));
+    cudaMalloc((void**) &d_indices, graph->indices.size() * sizeof(int));
 
     // copy memory from host to device
     cudaMemcpy(d_out_grad, out->grad.data(), out->grad.size() * sizeof(float), cudaMemcpyHostToDevice);
@@ -338,9 +329,14 @@ void cuda_GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int
 
     // kernel
     const int numNodes = graph->indptr.size() - 1;
-    const int bsize = 32;
-    dim3 numBlocks(bsize, 1);
-    dim3 threadsPerBlock(ceil(float(numNodes) / bsize), 1);
+    dim3 numBlocks(numNodes, 1);
+    dim3 threadsPerBlock(dim, 1);
+
+    if(dim > MAX_THREAD_PER_BLOCK) {
+        numBlocks.x = MAX_THREAD_PER_BLOCK;
+        threadsPerBlock.y = ceil((float)dim / (float)numBlocks.x);
+    }
+
     cuda_GraphSum_backward_kernel<<<numBlocks, threadsPerBlock>>>(d_in_grad, d_out_grad, d_indptr, d_indices, dim, numNodes);
     cudaDeviceSynchronize();
 

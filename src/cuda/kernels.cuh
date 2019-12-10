@@ -7,6 +7,9 @@
 #include <thrust/device_ptr.h>
 #include <curand_kernel.h>
 
+#define TILE_SIZE 32
+#define MAX_THREAD_PER_BLOCK 1024
+
 // MatMul
 __global__
 void cuda_Matmul_forward_kernel(const float *a, const float *b, float *c, const uint m, const uint n, const uint p);

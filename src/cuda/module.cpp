@@ -16,18 +16,18 @@ void Matmul::forward(bool training) {
     timer_start(TMR_MATMUL_FW);
     c->zero();
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_Matmul_forward(a, b, c, m, n, p);
+    cuda_Matmul_forward(a, b, c, m, n, p);
 
-    // #else
+    #else
 
     for (int i = 0; i < m; i++)
         for (int j = 0; j < n; j++)
             for (int k = 0; k < p; k++)
                 c->data[i * p + k] += a->data[i * n + j] * b->data[j * p + k];
 
-    // #endif
+    #endif
 
     timer_stop(TMR_MATMUL_FW);
 }
@@ -37,11 +37,11 @@ void Matmul::backward() {
     a->zero_grad();
     b->zero_grad();
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_Matmul_backward(a, b, c, m, n, p);
+    cuda_Matmul_backward(a, b, c, m, n, p);
 
-    // #else
+    #else
 
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
@@ -54,7 +54,7 @@ void Matmul::backward() {
         }
     }
 
-    // #endif
+    #endif
 
     timer_stop(TMR_MATMUL_BW);
 }
@@ -116,11 +116,11 @@ void GraphSum::forward(bool training) {
     timer_start(TMR_GRAPHSUM_FW);
     out->zero();
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_GraphSum_forward(in, out, graph, dim);
+    cuda_GraphSum_forward(in, out, graph, dim);
 
-    // #else
+    #else
 
     for (int src = 0; src < graph->indptr.size() - 1; src++) {
         for (int i = graph->indptr[src]; i < graph->indptr[src + 1]; i++) {
@@ -134,7 +134,7 @@ void GraphSum::forward(bool training) {
         }
     }
 
-    // #endif
+    #endif
 
     timer_stop(TMR_GRAPHSUM_FW);
 }
@@ -143,11 +143,11 @@ void GraphSum::backward() {
     timer_start(TMR_GRAPHSUM_BW);
     in->zero_grad();
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_GraphSum_backward(in, out, graph, dim);
+    cuda_GraphSum_backward(in, out, graph, dim);
 
-    // #else
+    #else
 
     for (int src = 0; src < graph->indptr.size() - 1; src++) {
         for (int i = graph->indptr[src]; i < graph->indptr[src + 1]; i++) {
@@ -160,7 +160,7 @@ void GraphSum::backward() {
         }
     }
 
-    // #endif
+    #endif
 
     timer_stop(TMR_GRAPHSUM_BW);
 }
@@ -174,11 +174,11 @@ void CrossEntropyLoss::forward(bool training) {
     int count = 0;
     if (training) logits->zero_grad();
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
+    cuda_CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
 
-    // #else
+    #else
 
     for (int i = 0; i < logits->data.size() / num_classes; i++) {
         if (truth[i] < 0) continue;
@@ -203,7 +203,7 @@ void CrossEntropyLoss::forward(bool training) {
         }
     }
 
-    // #endif
+    #endif
 
     *loss = total_loss / count;
     if (training) {
@@ -229,11 +229,11 @@ ReLU::~ReLU() {
 void ReLU::forward(bool training) {
     timer_start(TMR_RELU_FW);
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_ReLU_forward(in, mask, training);
+    cuda_ReLU_forward(in, mask, training);
 
-    // #else
+    #else
 
     for (int i = 0; i < in->data.size(); i++) {
         bool keep = in->data[i] > 0;
@@ -241,7 +241,7 @@ void ReLU::forward(bool training) {
         if (!keep) in->data[i] = 0;
     }
 
-    // #endif
+    #endif
 
     timer_stop(TMR_RELU_FW);
 }
@@ -249,16 +249,16 @@ void ReLU::forward(bool training) {
 void ReLU::backward() {
     timer_start(TMR_RELU_BW);
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_ReLU_backward(in, mask);
+    cuda_ReLU_backward(in, mask);
 
-    // #else
+    #else
 
     for (int i = 0; i < in->data.size(); i++)
         if (!mask[i]) in->grad[i] = 0;
 
-    // #endif
+    #endif
 
     timer_stop(TMR_RELU_BW);
 }
@@ -278,11 +278,11 @@ void Dropout::forward(bool training) {
     if (!training) return;
     timer_start(TMR_DROPOUT_FW);
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_Dropout_forward(in, mask, p);
+    cuda_Dropout_forward(in, mask, p);
 
-    // #else
+    #else
 
     const int threshold = int(p * MY_RAND_MAX);
     float scale = 1 / (1 - p);
@@ -293,7 +293,7 @@ void Dropout::forward(bool training) {
         if (mask) mask[i] = keep;
     }
 
-    // #endif
+    #endif
 
     timer_stop(TMR_DROPOUT_FW);
 }
@@ -302,18 +302,18 @@ void Dropout::backward() {
     if (!mask) return;
     timer_start(TMR_DROPOUT_BW);
 
-    // #ifdef __NVCC__
+    #ifdef __NVCC__
 
-    // cuda_Dropout_backward(in, mask, p);
+    cuda_Dropout_backward(in, mask, p);
 
-    // #else
+    #else
 
     float scale = 1 / (1 - p);
 
     for (int i = 0; i < in->data.size(); i++)
         in->grad[i] *= mask[i] ? scale : 0;
 
-    // #endif
+    #endif
 
     timer_stop(TMR_DROPOUT_BW);
 }

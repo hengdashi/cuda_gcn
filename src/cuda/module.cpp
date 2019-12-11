@@ -180,7 +180,7 @@ void CrossEntropyLoss::forward(bool training) {
 
     #ifdef __NVCC__
 
-    cuda_CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
+    cuda_CrossEntropy_forward(logits, truth, loss, num_classes, training);
 
     #else
 
@@ -209,13 +209,13 @@ void CrossEntropyLoss::forward(bool training) {
         }
     }
 
-    #endif
-
     *loss = total_loss / count;
     if (training) {
         for (int i = 0; i < logits->grad.size(); i++)
             logits->grad[i] /= count;
     }
+
+    #endif
 
     timer_stop(TMR_LOSS_FW);
 }

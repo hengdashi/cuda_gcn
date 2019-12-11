@@ -62,9 +62,12 @@ void cuda_GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int
 
 // Cross Entropy
 __global__ 
-void cuda_CrossEntropy_forward_kernel(float* logits_data, float* logits_grad, bool training, int num_classes, int* truth, int* count, float* thread_loss, int size);
+void cuda_CrossEntropy_forward_A_kernel(float *logits_data, float *logits_grad, bool training, int num_classes, int* truth, int* count, float* thread_loss, int size);
 
-void cuda_CrossEntropy_forward(Variable *logits, int *truth, float &total_loss, int &count, int num_classes, bool training);
+__global__
+void cuda_CrossEntropy_forward_B_kernel(float *logits_grad, int size, int count);
+
+void cuda_CrossEntropy_forward(Variable *logits, int *truth, float *loss, int num_classes, bool training);
 
 
 // ReLU

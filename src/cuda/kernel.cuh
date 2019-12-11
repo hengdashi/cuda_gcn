@@ -19,6 +19,8 @@ inline void CUDA_ASSERT(cudaError_t code, const char *file, int line, bool abort
     }
 }
 
+extern curandState *devStates;
+
 // MatMul
 __global__
 void cuda_Matmul_forward_kernel(const float *a, const float *b, float *c, const uint m, const uint n, const uint p);

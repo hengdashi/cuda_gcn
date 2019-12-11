@@ -7,7 +7,7 @@
 #include <tuple>
 
 #ifdef __NVCC__
-#include "kernels.cuh"
+#include "kernel.cuh"
 #endif
 
 GCNParams GCNParams::get_default() {
@@ -37,7 +37,7 @@ GCN::GCN(GCNParams params, GCNData *input_data) {
     // sparsematmul
     variables.emplace_back(params.num_nodes * params.hidden_dim);
     Variable *layer1_var1 = &variables.back();
-    variables.emplace_back(params.input_dim * params.hidden_dim, true, true);
+    variables.emplace_back(params.input_dim * params.hidden_dim, true);
     Variable *layer1_weight = &variables.back();
     layer1_weight->glorot(params.input_dim, params.hidden_dim);
     modules.push_back(new SparseMatmul(input, layer1_weight, layer1_var1, &data->feature_index, params.num_nodes, params.input_dim, params.hidden_dim));
@@ -59,7 +59,7 @@ GCN::GCN(GCNParams params, GCNData *input_data) {
     // dense matrix multiply
     variables.emplace_back(params.num_nodes * params.output_dim);
     Variable *layer2_var1 = &variables.back();
-    variables.emplace_back(params.hidden_dim * params.output_dim, true, true);
+    variables.emplace_back(params.hidden_dim * params.output_dim, true);
     Variable *layer2_weight = &variables.back();
     layer2_weight->glorot(params.hidden_dim, params.output_dim);
     modules.push_back(new Matmul(layer1_var2, layer2_weight, layer2_var1, params.num_nodes, params.hidden_dim, params.output_dim));
@@ -84,7 +84,7 @@ GCN::GCN(GCNParams params, GCNData *input_data) {
     #endif
 }
 
-GCN::~GCN(){
+GCN::~GCN() {
     for(auto m: modules)
         delete m;
 

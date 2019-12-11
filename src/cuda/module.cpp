@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 #ifdef __NVCC__
-#include "kernels.cuh"
+#include "kernel.cuh"
 #endif
 
 Matmul::Matmul(Variable *a, Variable *b, Variable *c, int m, int n, int p) :

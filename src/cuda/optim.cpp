@@ -4,7 +4,7 @@
 #include <stdio.h>
 
 #ifdef __NVCC__
-#include "kernels.cuh"
+#include "kernel.cuh"
 #endif
 
 AdamParams AdamParams::get_default() {

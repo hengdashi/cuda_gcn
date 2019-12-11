@@ -29,9 +29,9 @@ public:
 class SparseMatmul: public Module {
     Variable *a, *b, *c;
     SparseIndex *sp;
-    int m, n, p;
+    int p;
 public:
-    SparseMatmul(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int m, int n, int p);
+    SparseMatmul(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int p);
     ~SparseMatmul() {}
     void forward(bool);
     void backward();

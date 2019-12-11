@@ -1,5 +1,5 @@
-#ifndef KERNELS_CUH
-#define KERNELS_CUH
+#ifndef KERNEL_CUH
+#define KERNEL_CUH
 
 #include "optim.h"
 #include "sparse.h"
@@ -10,14 +10,16 @@
 #define TILE_SIZE 32
 #define MAX_THREAD_PER_BLOCK 1024
 
-#define cuda_check(ans) { cuda_assert((ans), __FILE__, __LINE__); }
+#define CUDA_CHECK(ans) { CUDA_ASSERT((ans), __FILE__, __LINE__); }
 
-inline void cuda_assert(cudaError_t code, const char *file, int line, bool abort=true) {
+inline void CUDA_ASSERT(cudaError_t code, const char *file, int line, bool abort=true) {
     if (code != cudaSuccess) {
-        fprintf(stderr,"cuda_assert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        fprintf(stderr,"CUDA_ASSERT: %s %s %d\n", cudaGetErrorString(code), file, line);
         if (abort) exit(code);
     }
 }
+
+extern curandState *devStates;
 
 // MatMul
 __global__

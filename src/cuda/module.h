@@ -29,7 +29,7 @@ public:
 class SparseMatmul: public Module {
     Variable *a, *b, *c;
     SparseIndex *sp;
-    int p;
+    int m, n, p;
 public:
     SparseMatmul(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int m, int n, int p);
     ~SparseMatmul() {}

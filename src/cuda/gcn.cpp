@@ -40,7 +40,7 @@ GCN::GCN(GCNParams params, GCNData *input_data) {
     variables.emplace_back(params.input_dim * params.hidden_dim, true);
     Variable *layer1_weight = &variables.back();
     layer1_weight->glorot(params.input_dim, params.hidden_dim);
-    modules.push_back(new SparseMatmul(input, layer1_weight, layer1_var1, &data->feature_index, params.hidden_dim));
+    modules.push_back(new SparseMatmul(input, layer1_weight, layer1_var1, &data->feature_index, params.num_nodes, params.input_dim, params.hidden_dim));
 
     // graphsum
     variables.emplace_back(params.num_nodes * params.hidden_dim);

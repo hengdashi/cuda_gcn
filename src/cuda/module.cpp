@@ -61,8 +61,8 @@ void Matmul::backward() {
     timer_stop(TMR_MATMUL_BW);
 }
 
-SparseMatmul::SparseMatmul(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int p) :
-        a(a), b(b), c(c), sp(sp), p(p) {}
+SparseMatmul::SparseMatmul(Variable *a, Variable *b, Variable *c, SparseIndex *sp, int m, int n, int p) :
+        a(a), b(b), c(c), sp(sp), m(m), n(n), p(p) {}
 
 void SparseMatmul::forward(bool training) {
     timer_start(TMR_SPMATMUL_FW);

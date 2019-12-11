@@ -30,7 +30,6 @@ GCN::GCN(GCNParams params, GCNData *input_data) {
     variables.emplace_back(data->feature_index.indices.size(), false);
     input = &variables.back();
     modules.push_back(new Dropout(input, params.dropout));
-
     #ifdef __NVCC__
     rand_size = std::max(rand_size, (uint)input->data.size());
     #endif

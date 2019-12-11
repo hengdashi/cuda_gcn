@@ -14,13 +14,14 @@ Matmul::Matmul(Variable *a, Variable *b, Variable *c, int m, int n, int p) :
 
 void Matmul::forward(bool training) {
     timer_start(TMR_MATMUL_FW);
-    c->zero();
 
     #ifdef __NVCC__
 
     cuda_Matmul_forward(a, b, c, m, n, p);
 
     #else
+
+    c->zero();
 
     for (int i = 0; i < m; i++)
         for (int j = 0; j < n; j++)
@@ -34,14 +35,15 @@ void Matmul::forward(bool training) {
 
 void Matmul::backward() {
     timer_start(TMR_MATMUL_BW);
-    a->zero_grad();
-    b->zero_grad();
 
     #ifdef __NVCC__
 
     cuda_Matmul_backward(a, b, c, m, n, p);
 
     #else
+
+    a->zero_grad();
+    b->zero_grad();
 
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
@@ -64,13 +66,14 @@ SparseMatmul::SparseMatmul(Variable *a, Variable *b, Variable *c, SparseIndex *s
 
 void SparseMatmul::forward(bool training) {
     timer_start(TMR_SPMATMUL_FW);
-    c->zero();
 
     #ifdef __NVCC__
 
     cuda_SparseMatmul_forward(a, b, c, sp, p);
 
     #else
+
+    c->zero();
 
     for (int i = 0; i < sp->indptr.size() - 1; i++) {
         for (int jj = sp->indptr[i]; jj < sp->indptr[i + 1]; jj++) {
@@ -87,13 +90,14 @@ void SparseMatmul::forward(bool training) {
 
 void SparseMatmul::backward() {
     timer_start(TMR_SPMATMUL_BW);
-    b->zero_grad();
 
     #ifdef __NVCC__
 
     cuda_SparseMatmul_backward(a, b, c, sp, p);
 
     #else
+
+    b->zero_grad();
 
     for (int i = 0; i < sp->indptr.size() - 1; i++) {
         for (int jj = sp->indptr[i]; jj < sp->indptr[i + 1]; jj++) {
@@ -114,13 +118,14 @@ GraphSum::GraphSum(Variable *in, Variable *out, SparseIndex *graph, int dim) :
 
 void GraphSum::forward(bool training) {
     timer_start(TMR_GRAPHSUM_FW);
-    out->zero();
 
     #ifdef __NVCC__
 
     cuda_GraphSum_forward(in, out, graph, dim);
 
     #else
+
+    out->zero();
 
     for (int src = 0; src < graph->indptr.size() - 1; src++) {
         for (int i = graph->indptr[src]; i < graph->indptr[src + 1]; i++) {
@@ -172,13 +177,14 @@ void CrossEntropyLoss::forward(bool training) {
     timer_start(TMR_LOSS_FW);
     float total_loss = 0;
     int count = 0;
-    if (training) logits->zero_grad();
 
     #ifdef __NVCC__
 
     cuda_CrossEntropy_forward(logits, truth, total_loss, count, num_classes, training);
 
     #else
+
+    if (training) logits->zero_grad();
 
     for (int i = 0; i < logits->data.size() / num_classes; i++) {
         if (truth[i] < 0) continue;

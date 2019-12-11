@@ -43,6 +43,9 @@ void cuda_Matmul_forward(Variable *a, Variable *b, Variable *c, int m, int n, in
     cuda_check(cudaMemcpy(d_a, a->data.data(), m * n * sizeof(float), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_b, b->data.data(), n * p * sizeof(float), cudaMemcpyHostToDevice));
 
+    // memset c
+    cuda_check(cudaMemset(d_c, 0, m * p * sizeof(float)));
+
     // kernel
     dim3 block((p-1) / TILE_SIZE + 1, (m-1) / TILE_SIZE + 1, 1);
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
@@ -132,6 +135,10 @@ void cuda_Matmul_backward(Variable *a, Variable *b, Variable *c, int m, int n, i
     cuda_check(cudaMemcpy(d_b, b->data.data(), n * p * sizeof(float), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_c_g, c->grad.data(), m * p * sizeof(float), cudaMemcpyHostToDevice));
 
+    // memset a b
+    cuda_check(cudaMemset(d_a_g, 0, m * n * sizeof(float)));
+    cuda_check(cudaMemset(d_b_g, 0, n * p * sizeof(float)));
+
     // kernel
     dim3 block_a((n-1)/TILE_SIZE+1, (m-1)/TILE_SIZE+1, 1);
     dim3 block_b((p-1)/TILE_SIZE+1, (n-1)/TILE_SIZE+1, 1);
@@ -182,9 +189,11 @@ void cuda_SparseMatmul_forward(Variable *a, Variable *b, Variable *c, SparseInde
     // memcpy
     cuda_check(cudaMemcpy(a_in, a->data.data(), a->data.size() * sizeof(float), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(b_in, b->data.data(), b->data.size() * sizeof(float), cudaMemcpyHostToDevice));
-    cuda_check(cudaMemcpy(c_in, c->data.data(), c->data.size() * sizeof(float), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_indptr, sp->indptr.data(), sp->indptr.size() * sizeof(int), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_indices, sp->indices.data(), sp->indices.size() * sizeof(int), cudaMemcpyHostToDevice));
+
+    // memset c
+    cuda_check(cudaMemset(c_in, 0, c->data.size() * sizeof(float)));
 
     if(sp->indptr.size() <= 1) return;
 
@@ -236,10 +245,11 @@ void cuda_SparseMatmul_backward(Variable *a, Variable *b, Variable *c, SparseInd
 
     // memcpy
     cuda_check(cudaMemcpy(a_in, a->data.data(), a->data.size() * sizeof(float), cudaMemcpyHostToDevice));
-    cuda_check(cudaMemcpy(b_in, b->grad.data(), b->grad.size() * sizeof(float), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(c_in, c->grad.data(), c->grad.size() * sizeof(float), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_indptr, sp->indptr.data(), sp->indptr.size() * sizeof(int), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_indices, sp->indices.data(), sp->indices.size() * sizeof(int), cudaMemcpyHostToDevice));
+
+    cuda_check(cudaMemset(b_in, 0, b->grad.size() * sizeof(float)));
 
     if(sp->indptr.size() <= 1) return;
 
@@ -300,6 +310,9 @@ void cuda_GraphSum_forward(Variable *in, Variable *out, SparseIndex *graph, int 
     cuda_check(cudaMemcpy(d_indptr, graph->indptr.data(), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice));
 
+    // memset out
+    cuda_check(cudaMemset(d_out_data, 0, out->data.size() * sizeof(float)));
+
     // kernel
     const int numNodes = graph->indptr.size() - 1;
     dim3 numBlocks(numNodes, 1);
@@ -348,6 +361,9 @@ void cuda_GraphSum_backward(Variable *in, Variable *out, SparseIndex *graph, int
     cuda_check(cudaMemcpy(d_out_grad, out->grad.data(), out->grad.size() * sizeof(float), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_indptr, graph->indptr.data(), graph->indptr.size() * sizeof(int), cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_indices, graph->indices.data(), graph->indices.size() * sizeof(int), cudaMemcpyHostToDevice));
+
+    // memset in grad
+    cuda_check(cudaMemset(d_in_grad, 0, in->grad.size() * sizeof(float)));
 
     // kernel
     const int numNodes = graph->indptr.size() - 1;
@@ -425,6 +441,9 @@ void cuda_CrossEntropy_forward(Variable *logits, int *truth, float &total_loss, 
     cuda_check(cudaMemcpy(d_logits_data, logits_data, logits_data_size, cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_logits_grad, logits_grad, logits_grad_size, cudaMemcpyHostToDevice));
     cuda_check(cudaMemcpy(d_truth, truth, truth_size, cudaMemcpyHostToDevice));
+
+    // memset logits grad
+    if (training) cuda_check(cudaMemset(d_logits_grad, 0, logits_grad_size));
 
     // run kernel function
     cuda_CrossEntropy_forward_kernel<<< grid, block >>>(d_logits_data, d_logits_grad, training, num_classes, d_truth, d_count, d_loss, logits->data.size());

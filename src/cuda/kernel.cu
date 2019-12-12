@@ -470,7 +470,7 @@ void cuda_CrossEntropy_forward(Variable *logits, int *truth, float *loss, int nu
     CUDA_CHECK(cudaDeviceSynchronize());
 
     *loss /= count;
-    int grid_grad = 32;
+    int grid_grad = 64;
     int block_grad = (logits->grad.size()+grid_grad) / grid_grad;
     if (training)
         cuda_CrossEntropy_forward_B_kernel<<< grid_grad, block_grad >>>(d_logits_grad, logits->grad.size(), count);

@@ -24,6 +24,7 @@ public:
 
     CUDASparseIndex(): indices(nullptr), indptr(nullptr), indices_size(0), indptr_size(0) {}
     CUDASparseIndex(const SparseIndex &sp);
-}
+    ~CUDASparseIndex();
+};
 
 #endif

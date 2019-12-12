@@ -104,7 +104,7 @@ void cuda_free_random_state();
 
 // adam
 __global__
-void cuda_Adam_step_kernel(float* grad, float* data, float* m, float* v, bool decay, float weight_decay, float beta1, float beta2, float eps, float step_size);
+void cuda_Adam_step_kernel(float* grad, float* data, float* m, float* v, bool decay, float weight_decay, float beta1, float beta2, float eps, float step_size, int varsize);
 
 void cuda_Adam_step(AdamVariable &var, AdamParams params, float step_size);
 

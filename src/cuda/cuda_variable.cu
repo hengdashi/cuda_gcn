@@ -14,7 +14,7 @@ CUDAVariable::~CUDAVariable() {
     if (requires_grad) CUDA_CHECK(cudaFree(grad));
 }
 
-__global__ void cuda_Variable_glorot_kernel(float *data, curandState *state, float scale) {
+__global__ void cuda_Variable_glorot_kernel(float *data, curandState *state, int size, float scale) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     if (id < size)
         data[id] = (curand_uniform(&state[id]) - 0.5) * scale;
@@ -25,7 +25,7 @@ void CUDAVariable::glorot(int in_size, int out_size) {
 
     dim3 block((size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
-    cuda_Variable_glorot<<<block, thread_in_block>>>(data, devStates, scale);
+    cuda_Variable_glorot_kernel<<<block, thread_in_block>>>(data, devStates, size, scale);
 }
 
 void CUDAVariable::zero() {
@@ -44,4 +44,9 @@ CUDASparseIndex::CUDASparseIndex(const SparseIndex &sp) {
     CUDA_CHECK(cudaMemcpy(indices, sp.indices.data(), indices_size * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMalloc((void**) &indptr, indptr_size * sizeof(int)));
     CUDA_CHECK(cudaMemcpy(indptr, sp.indptr.data(), indptr_size * sizeof(int), cudaMemcpyHostToDevice));
+}
+
+CUDASparseIndex::~CUDASparseIndex() {
+    if (indices != nullptr) cudaFree(indices);
+    if (indptr != nullptr) cudaFree(indptr);
 }

@@ -6,6 +6,8 @@
 #include <iostream>
 #include <string>
 
+#include "cuda_gcn.cuh"
+
 using namespace std;
 
 int main(int argc, char **argv) {
@@ -37,7 +39,10 @@ int main(int argc, char **argv) {
     std::cout << "RUNNING ON CPU" << std::endl;
     #endif
 
-    GCN gcn(params, &data);
-    gcn.run();
+    // GCN gcn(params, &data);
+    // gcn.run();
+    CUDAGCN cuda_gcn(params, &data);
+    cuda_gcn.run();
+    
     return EXIT_SUCCESS;
 }

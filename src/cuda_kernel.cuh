@@ -86,4 +86,7 @@ void cuda_Adam_step_kernel(float* grad, float* data, float* m, float* v, bool de
 __global__
 void cuda_set_truth_kernel(int *truth, int *data_split, int *data_label, int current_split, int size);
 
+__global__
+void cuda_Variable_glorot_kernel(float *data, curandState *state, int size, float scale);
+
 #endif

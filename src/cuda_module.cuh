@@ -90,7 +90,6 @@ public:
     ~CUDAAdamVariable();
 };
 
-
 class CUDAAdam {
     AdamParams params;
     int step_count;

@@ -129,7 +129,7 @@ std::pair<float, float> GCN::eval(int current_split) {
 
 void GCN::run() {
     int epoch = 1;
-    float total_time = 0.0;
+
     std::vector<float> loss_history;
     for(; epoch <= params.epochs; epoch++) {
         float train_loss, train_acc, val_loss, val_acc;

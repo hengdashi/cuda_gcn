@@ -3,7 +3,7 @@ CXXFLAGS= -O3 -std=c++11
 GCCFLAGS= -Wall -Wno-sign-compare -Wno-unused-variable -Wno-unknown-pragmas
 LDFLAGS=-lm -lstdc++
 
-prefix=src/cuda/
+prefix=src/
 CXXFILES=$(prefix)*.cpp
 HFILES=$(prefix)*.h
 

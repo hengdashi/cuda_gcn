@@ -103,7 +103,16 @@ void CUDAGraphSum::backward() {
 }
 
 CUDACrossEntropyLoss::CUDACrossEntropyLoss(CUDAVariable *logits, int *truth, float *loss, int num_classes) :
-    logits(logits), truth(truth), loss(loss), num_classes(num_classes) {}
+    logits(logits), truth(truth), loss(loss), num_classes(num_classes) {
+    int logitsPerClass = logits->size / num_classes;
+    CUDA_CHECK(cudaMalloc((void**) &d_loss, logitsPerClass * sizeof(float)));
+    CUDA_CHECK(cudaMalloc((void**) &d_count, logitsPerClass * sizeof(int)));
+}
+
+CUDACrossEntropyLoss::~CUDACrossEntropyLoss() {
+    CUDA_CHECK(cudaFree(d_loss));
+    CUDA_CHECK(cudaFree(d_count));
+}
 
 void CUDACrossEntropyLoss::forward(bool training) {
     timer_start(TMR_LOSS_FW);
@@ -112,11 +121,8 @@ void CUDACrossEntropyLoss::forward(bool training) {
     
     int logitsPerClass = logits->size / num_classes;
 
-    // TODO: remove overhead here
-    float *d_loss;
-    int *d_count;
-    CUDA_CHECK(cudaMalloc((void**) &d_loss, logitsPerClass * sizeof(float)));
-    CUDA_CHECK(cudaMalloc((void**) &d_count, logitsPerClass * sizeof(int)));
+    CUDA_CHECK(cudaMemset(d_loss, 0, logitsPerClass * sizeof(float)));
+    CUDA_CHECK(cudaMemset(d_count, 0, logitsPerClass * sizeof(int)));
 
     dim3 block(32, 1, 1);
     dim3 thread_in_block((logitsPerClass + block.x) / block.x, 1, 1);
@@ -139,9 +145,6 @@ void CUDACrossEntropyLoss::forward(bool training) {
         CUDA_CHECK(cudaGetLastError());
         // CUDA_CHECK(cudaDeviceSynchronize());
     }
-
-    CUDA_CHECK(cudaFree(d_loss));
-    CUDA_CHECK(cudaFree(d_count));
 
     timer_stop(TMR_LOSS_FW);
 }

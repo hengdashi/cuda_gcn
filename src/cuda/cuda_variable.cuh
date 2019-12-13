@@ -15,6 +15,8 @@ public:
     void glorot(int in_size, int out_size);
     void zero();
     void zero_grad();
+    void print(int col);
+    float grad_norm();
 };
 
 struct CUDASparseIndex {

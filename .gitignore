@@ -3,3 +3,10 @@
 
 # data
 data/*
+
+# executable
+gcn-seq
+gcn-cuda
+
+.vscode/
+.vscode/*

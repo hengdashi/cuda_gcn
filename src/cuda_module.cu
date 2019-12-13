@@ -138,8 +138,8 @@ void CUDACrossEntropyLoss::forward(bool training) {
     // CUDA_CHECK(cudaDeviceSynchronize());
 
     *loss /= count;
-    dim3 block2(64, 1, 1);
-    dim3 thread_in_block2((logits->size + block2.x) / block2.x, 1, 1);
+    dim3 block2(logits->size, 1, 1);
+    dim3 thread_in_block2(1, 1, 1);
     if (training) {
         cuda_CrossEntropy_forward_B_kernel<<<block2, thread_in_block2>>>(logits->grad, logits->size, count);
         CUDA_CHECK(cudaGetLastError());

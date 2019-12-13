@@ -141,7 +141,7 @@ pair<float, float> CUDAGCN::train_epoch() {
     float train_loss = loss + get_l2_penalty();
     float train_acc = get_accuracy();
     for (int i = modules.size() - 1; i >= 0; i--)
-        modules[i]->backward();        
+        modules[i]->backward();
     optimizer->step();
     return {train_loss, train_acc};
 }

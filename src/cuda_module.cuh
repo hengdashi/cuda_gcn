@@ -52,9 +52,12 @@ class CUDACrossEntropyLoss: public CUDAModule {
     int *truth;
     float *loss;
     int num_classes;
+    
+    float *d_loss;
+    int *d_count;
 public:
     CUDACrossEntropyLoss(CUDAVariable *logits, int *truth, float *loss, int num_classes);
-    ~CUDACrossEntropyLoss() {}
+    ~CUDACrossEntropyLoss();
     void forward(bool);
     void backward();
 };

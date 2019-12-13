@@ -1,6 +1,7 @@
 #include "cuda_gcn.cuh"
 #include "timer.h"
 #include <algorithm>
+#include <thrust/transform.h>
 
 using std::max;
 using std::max_element;
@@ -63,19 +64,18 @@ CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
     adam_params.weight_decay = params.weight_decay;
     optimizer = new CUDAAdam({{layer1_weight, true}, {layer2_weight, false}}, adam_params);
 
-    // vector<int> sizes = {input->size, layer1_weight->size, layer1_var2->size, layer2_weight->size};
-    // int rand_size = *max_element(sizes.begin(), sizes.end());
-    // printf("rand_size: %d\n", rand_size);
-    // cuda_init_random_state(rand_size);
+    // other variable
+    CUDA_CHECK(cudaMalloc((void**) &d_l2_penalty, variables[2].size * sizeof(float)));
 }
 
 CUDAGCN::~CUDAGCN() {
+    cuda_free_random_state();
     for (auto &m : modules) delete m;
     delete sp;
     delete graph;
     delete optimizer;
     CUDA_CHECK(cudaFree(truth));
-    cuda_free_random_state();
+    CUDA_CHECK(cudaFree(d_l2_penalty));
 }
 
 void CUDAGCN::set_input() {
@@ -119,17 +119,17 @@ float CUDAGCN::get_accuracy() {
     return float(total - wrong) / total;
 }
 
-// TODO: reduction (using thrust?)
-float CUDAGCN::get_l2_penalty() {
-    float *cpu_var = new float[variables[2].size];
-    CUDA_CHECK(cudaMemcpy(cpu_var, variables[2].data, variables[2].size * sizeof(float), cudaMemcpyDeviceToHost));
-
-    float l2 = 0;
-    for (int i = 0; i < variables[2].size; i++) {
-        float x = cpu_var[i];
-        l2 += x * x;
+struct square_functor{
+    square_functor() {}
+    __host__ __device__ float operator()(const float &x) const {
+        return x * x;
     }
-    delete[] cpu_var;
+};
+float CUDAGCN::get_l2_penalty() {
+    int size = variables[2].size;
+    thrust::device_ptr<float> l2_ptr(d_l2_penalty), var2_ptr(variables[2].data);
+    thrust::transform(var2_ptr, var2_ptr + size, l2_ptr, square_functor());
+    float l2 = thrust::reduce(l2_ptr, l2_ptr + size, (float)0.0, thrust::plus<float>());
     return params.weight_decay * l2 / 2;
 }
 

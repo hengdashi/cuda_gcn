@@ -94,10 +94,11 @@ public:
 class CUDAAdam {
     AdamParams params;
     int step_count;
-    vector<CUDAAdamVariable> vars;
+    vector<CUDAAdamVariable*> vars;
 public:
     CUDAAdam() {}
     CUDAAdam(vector<pair<CUDAVariable*, bool>> vars, AdamParams params);
+    ~CUDAAdam();
     void step();
 };
 

@@ -1,10 +1,11 @@
 #include "cuda_gcn.cuh"
 #include "timer.h"
+#include <algorithm>
 
 using std::max;
+using std::max_element;
 
 CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
-    uint rand_size = 0;
 
     this->params = params;
     data = input_data;
@@ -17,16 +18,14 @@ CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
     variables.emplace_back(data->feature_index.indices.size(), false);
     input = &variables.back();
     modules.push_back(new CUDADropout(input, params.dropout));
-    rand_size = max(rand_size, (uint)input->size);
-
+    
     // sparse matmul
     variables.emplace_back(params.num_nodes * params.hidden_dim);
     CUDAVariable *layer1_var1 = &variables.back();
     variables.emplace_back(params.input_dim * params.hidden_dim, true);
     CUDAVariable *layer1_weight = &variables.back();
     modules.push_back(new CUDASparseMatmul(input, layer1_weight, layer1_var1, sp, params.num_nodes, params.input_dim, params.hidden_dim));
-    rand_size = max(rand_size, (uint)layer1_weight->size);
-
+    
     // graph sum
     variables.emplace_back(params.num_nodes * params.hidden_dim);
     CUDAVariable *layer1_var2 = &variables.back();
@@ -37,7 +36,6 @@ CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
 
     // dropout
     modules.push_back(new CUDADropout(layer1_var2, params.dropout));
-    rand_size = max(rand_size, (uint)layer1_var2->size);
 
     // dense matmul
     variables.emplace_back(params.num_nodes * params.output_dim);
@@ -45,7 +43,6 @@ CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
     variables.emplace_back(params.hidden_dim * params.output_dim, true);
     CUDAVariable *layer2_weight = &variables.back();
     modules.push_back(new CUDAMatmul(layer1_var2, layer2_weight, layer2_var1, params.num_nodes, params.hidden_dim, params.output_dim));
-    rand_size = max(rand_size, (uint)layer2_weight->size);
 
     // graph sum
     variables.emplace_back(params.num_nodes * params.output_dim);
@@ -60,8 +57,11 @@ CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
     AdamParams adam_params = AdamParams::get_default();
     adam_params.lr = params.learning_rate;
     adam_params.weight_decay = params.weight_decay;
-    optimizer = CUDAAdam({{layer1_weight, true}, {layer2_weight, false}}, adam_params);
+    optimizer = new CUDAAdam({{layer1_weight, true}, {layer2_weight, false}}, adam_params);
 
+    vector<int> sizes = {input->size, layer1_weight->size, layer1_var2->size, layer2_weight->size};
+    int rand_size = *max_element(sizes.begin(), sizes.end());
+    printf("rand_size: %d\n", rand_size);
     cuda_init_random_state(rand_size);
     layer1_weight->glorot(params.input_dim, params.hidden_dim);
     layer2_weight->glorot(params.hidden_dim, params.output_dim);
@@ -71,6 +71,7 @@ CUDAGCN::~CUDAGCN() {
     for (auto &m : modules) delete m;
     delete sp;
     delete graph;
+    delete optimizer;
     CUDA_CHECK(cudaFree(truth));
     cuda_free_random_state();
 }
@@ -95,12 +96,13 @@ void CUDAGCN::set_truth(int current_split) {
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_set_truth_kernel<<<block, thread_in_block>>>(truth, d_data_split, d_data_label, current_split, params.num_nodes);
     CUDA_CHECK(cudaFree(d_data_split));
+    CUDA_CHECK(cudaFree(d_data_label));
 }
 
 // TODO: reduction (using thrust?)
 float CUDAGCN::get_accuracy() {
-    int *cpu_truth = new int(params.num_nodes);
-    float *cpu_output = new float(output->size);
+    int *cpu_truth = new int[params.num_nodes];
+    float *cpu_output = new float[output->size];
     CUDA_CHECK(cudaMemcpy(cpu_truth, truth, params.num_nodes * sizeof(int), cudaMemcpyDeviceToHost));
     CUDA_CHECK(cudaMemcpy(cpu_output, output->data, output->size * sizeof(float), cudaMemcpyDeviceToHost));
 
@@ -122,7 +124,7 @@ float CUDAGCN::get_accuracy() {
 
 // TODO: reduction (using thrust?)
 float CUDAGCN::get_l2_penalty() {
-    float *cpu_var = new float(variables[2].size);
+    float *cpu_var = new float[variables[2].size];
     CUDA_CHECK(cudaMemcpy(cpu_var, variables[2].data, variables[2].size * sizeof(float), cudaMemcpyDeviceToHost));
 
     float l2 = 0;
@@ -143,7 +145,7 @@ pair<float, float> CUDAGCN::train_epoch() {
     float train_acc = get_accuracy();
     for (int i = modules.size() - 1; i >= 0; i--)
         modules[i]->backward();
-    optimizer.step();
+    optimizer->step();
     return {train_loss, train_acc};
 }
 
@@ -159,7 +161,7 @@ pair<float, float> CUDAGCN::eval(int current_split) {
 
 void CUDAGCN::run() {
     int epoch = 1;
-    float total_time = 0.0;
+    // float total_time = 0.0;
     std::vector<float> loss_history;
     for(; epoch <= params.epochs; epoch++) {
         float train_loss, train_acc, val_loss, val_acc;

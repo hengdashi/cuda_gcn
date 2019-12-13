@@ -7,6 +7,7 @@ CUDAMatmul::CUDAMatmul(CUDAVariable *a, CUDAVariable *b, CUDAVariable *c, int m,
 void CUDAMatmul::forward(bool training) {
     timer_start(TMR_MATMUL_FW);
 
+    c->zero();
     dim3 block((p-1) / TILE_SIZE + 1, (m-1) / TILE_SIZE + 1, 1);
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
     cuda_Matmul_forward_kernel<<<block, thread_in_block>>>(a->data, b->data, c->data, m, n, p);
@@ -19,6 +20,8 @@ void CUDAMatmul::forward(bool training) {
 void CUDAMatmul::backward() {
     timer_start(TMR_MATMUL_BW);
 
+    a->zero_grad();
+    b->zero_grad();
     dim3 block_a((n-1)/TILE_SIZE+1, (m-1)/TILE_SIZE+1, 1);
     dim3 block_b((p-1)/TILE_SIZE+1, (n-1)/TILE_SIZE+1, 1);
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
@@ -39,7 +42,6 @@ void CUDASparseMatmul::forward(bool training) {
     timer_start(TMR_SPMATMUL_FW);
 
     c->zero();
-
     // TODO: when p larger than 1024?
     if (sp->indptr_size <= 1) return;
     dim3 block(sp->indptr_size - 1, 1, 1);
@@ -73,7 +75,6 @@ void CUDAGraphSum::forward(bool training) {
     timer_start(TMR_GRAPHSUM_FW);
 
     out->zero();
-
     // TODO: when dim larger than 1024?
     const int numNodes = graph->indptr_size - 1;
     dim3 block(numNodes, 1, 1);
@@ -89,7 +90,6 @@ void CUDAGraphSum::backward() {
     timer_start(TMR_GRAPHSUM_BW);
 
     in->zero_grad();
-
     // TODO: when dim larger than 1024?
     const int numNodes = graph->indptr_size - 1;
     dim3 block(numNodes, 1, 1);
@@ -138,6 +138,9 @@ void CUDACrossEntropyLoss::forward(bool training) {
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
     }
+
+    CUDA_CHECK(cudaFree(d_loss));
+    CUDA_CHECK(cudaFree(d_count));
 
     timer_stop(TMR_LOSS_FW);
 }
@@ -232,17 +235,24 @@ CUDAAdamVariable::~CUDAAdamVariable() {
 
 CUDAAdam::CUDAAdam(vector<pair<CUDAVariable*, bool>> vars, AdamParams params) :
     step_count(0), params(params){
-    for (auto v : vars)
-        this->vars.emplace_back(v.first, v.second);
+    for (auto v : vars) {
+        CUDAAdamVariable *adam_var = new CUDAAdamVariable(v.first, v.second);
+        this->vars.push_back(adam_var);
+    }
+}
+
+CUDAAdam::~CUDAAdam() {
+    for (auto &var : vars)
+        delete var;
 }
 
 void CUDAAdam::step() {
     step_count++;
     float step_size = params.lr * sqrtf(1 - powf(params.beta2, step_count)) / (1 - powf(params.beta1, step_count));
     for (auto &var : vars) {
-        dim3 block((var.size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
+        dim3 block((var->size-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
         dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
-        cuda_Adam_step_kernel<<<block, thread_in_block>>>(var.grad, var.data, var.m, var.v, var.decay, params.weight_decay, params.beta1, params.beta2, params.eps, step_size, var.size);
+        cuda_Adam_step_kernel<<<block, thread_in_block>>>(var->grad, var->data, var->m, var->v, var->decay, params.weight_decay, params.beta1, params.beta2, params.eps, step_size, var->size);
         CUDA_CHECK(cudaGetLastError());
         CUDA_CHECK(cudaDeviceSynchronize());
     }

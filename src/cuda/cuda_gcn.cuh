@@ -14,7 +14,7 @@ class CUDAGCN {
     CUDAVariable *input, *output;
     CUDASparseIndex *sp, *graph;
     int *truth;
-    CUDAAdam optimizer;
+    CUDAAdam *optimizer;
     float loss;
     void set_input();
     void set_truth(int current_split);

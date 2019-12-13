@@ -13,9 +13,11 @@ class CUDAGCN {
     vector<CUDAVariable> variables;
     CUDAVariable *input, *output;
     CUDASparseIndex *sp, *graph;
-    int *truth;
     CUDAAdam *optimizer;
+    int *truth;
     float loss;
+    float *d_l2_penalty;
+
     void set_input();
     void set_truth(int current_split);
     float get_accuracy();

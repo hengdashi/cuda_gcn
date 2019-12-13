@@ -6,7 +6,9 @@
 #include <iostream>
 #include <string>
 
+#ifdef __NVCC__
 #include "cuda_gcn.cuh"
+#endif
 
 using namespace std;
 
@@ -35,14 +37,13 @@ int main(int argc, char **argv) {
 
     #ifdef __NVCC__
     std::cout << "RUNNING ON GPU" << std::endl;
-    #else
-    std::cout << "RUNNING ON CPU" << std::endl;
-    #endif
-
-    // GCN gcn(params, &data);
-    // gcn.run();
     CUDAGCN cuda_gcn(params, &data);
     cuda_gcn.run();
-    
+    #else
+    std::cout << "RUNNING ON CPU" << std::endl;
+    GCN gcn(params, &data);
+    gcn.run();
+    #endif
+
     return EXIT_SUCCESS;
 }

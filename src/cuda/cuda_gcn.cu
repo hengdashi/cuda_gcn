@@ -82,12 +82,6 @@ void CUDAGCN::set_input() {
     CUDA_CHECK(cudaMemcpy(input->data, data->feature_value.data(), input->size * sizeof(float), cudaMemcpyHostToDevice));
 }
 
-__global__ void cuda_set_truth_kernel(int *truth, int *data_split, int *data_label, int current_split, int size) {
-    int id = blockIdx.x * blockDim.x + threadIdx.x;
-    if (id < size)
-        truth[id] = data_split[id] == current_split ? data_label[id] : -1;
-}
-
 void CUDAGCN::set_truth(int current_split) {
     int *d_data_split, *d_data_label;
     CUDA_CHECK(cudaMalloc((void**) &d_data_split, params.num_nodes * sizeof(int)));
@@ -183,10 +177,10 @@ void CUDAGCN::run() {
             }
         }
     }
-    
+    printf("total training time=%.5f\n", timer_total(TMR_TRAIN));
+
     float test_loss, test_acc;
     timer_start(TMR_TEST);
     std::tie(test_loss, test_acc) = eval(3);
     printf("test_loss=%.5f test_acc=%.5f time=%.5f\n", test_loss, test_acc, timer_stop(TMR_TEST));
 }
-

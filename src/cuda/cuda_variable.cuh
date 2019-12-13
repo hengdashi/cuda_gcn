@@ -1,7 +1,7 @@
 #ifndef CUDA_VARIABLE_CUH
 #define CUDA_VARIABLE_CUH
 
-#include "kernel.cuh"
+#include "cuda_kernel.cuh"
 #include "sparse.h"
 
 struct CUDAVariable {

@@ -1,8 +1,4 @@
-#ifdef __NVCC__
-#include "kernel.cuh"
-#else
 #include "variable.h"
-#endif
 #include "rand.h"
 #include <cstdlib>
 #include <cmath>
@@ -14,12 +10,10 @@ Variable::Variable(int size, bool requires_grad):
 
 void Variable::glorot(int in_size, int out_size) {
     float range = sqrtf(6.0f / (in_size + out_size));
-    // printf("glorot data size: %lu\n", data.size());
 
     for(int i = 0; i < data.size(); i++) {
         const float rand = float(RAND()) / MY_RAND_MAX - 0.5;
-        // printf("glorot rand: %f\n", rand * range * 2);
-        data[i] = (rand) * range * 2;
+        data[i] = rand * range * 2;
     }
 }
 

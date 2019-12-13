@@ -3,10 +3,6 @@
 #include <cstdlib>
 #include <stdio.h>
 
-#ifdef __NVCC__
-#include "kernel.cuh"
-#endif
-
 AdamParams AdamParams::get_default() {
     return {0.001, 0.9, 0.999, 1e-8, 0.0};
 }
@@ -28,14 +24,8 @@ Adam::Adam(std::vector<std::pair<Variable*, bool>> vars, AdamParams params) {
 void Adam::step() {
     step_count++;
     float step_size = params.lr * sqrtf(1 - powf(params.beta2, step_count)) / (1 - powf(params.beta1, step_count));
+
     for (auto &var: vars) {
-
-        #ifdef __NVCC__
-
-        cuda_Adam_step(var, params, step_size);
-
-        #else
-
         for (int i = 0; i < var.size(); i++) {
             float grad = (*var.grad)[i];
             if (var.decay) grad += params.weight_decay * (*var.data)[i];
@@ -43,7 +33,5 @@ void Adam::step() {
             var.v[i] = params.beta2 * var.v[i] + (1.0 - params.beta2) * grad * grad;
             (*var.data)[i] -= step_size * var.m[i] / (sqrtf(var.v[i]) + params.eps);
         }
-
-        #endif
     }
 }

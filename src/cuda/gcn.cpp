@@ -6,20 +6,11 @@
 #include <cstdio>
 #include <tuple>
 
-#ifdef __NVCC__
-#include "kernel.cuh"
-#endif
-
 GCNParams GCNParams::get_default() {
     return {2708, 1433, 16, 7, 0.5, 0.01, 5e-4, 100, 0};
 }
 
 GCN::GCN(GCNParams params, GCNData *input_data) {
-
-    #ifdef __NVCC__
-    uint rand_size = 0;
-    #endif
-
     init_rand_state();
     this->params = params;
     data = input_data;
@@ -30,9 +21,6 @@ GCN::GCN(GCNParams params, GCNData *input_data) {
     variables.emplace_back(data->feature_index.indices.size(), false);
     input = &variables.back();
     modules.push_back(new Dropout(input, params.dropout));
-    #ifdef __NVCC__
-    rand_size = std::max(rand_size, (uint)input->data.size());
-    #endif
 
     // sparsematmul
     variables.emplace_back(params.num_nodes * params.hidden_dim);
@@ -52,9 +40,6 @@ GCN::GCN(GCNParams params, GCNData *input_data) {
 
     // dropout
     modules.push_back(new Dropout(layer1_var2, params.dropout));
-    #ifdef __NVCC__
-    rand_size = std::max(rand_size, (uint)layer1_var2->data.size());
-    #endif
 
     // dense matrix multiply
     variables.emplace_back(params.num_nodes * params.output_dim);
@@ -78,19 +63,11 @@ GCN::GCN(GCNParams params, GCNData *input_data) {
     adam_params.lr = params.learning_rate;
     adam_params.weight_decay = params.weight_decay;
     optimizer = Adam({{layer1_weight, true}, {layer2_weight, false}}, adam_params);
-
-    #ifdef __NVCC__
-    cuda_init_random_state(rand_size);
-    #endif
 }
 
 GCN::~GCN() {
     for(auto m: modules)
         delete m;
-
-    #ifdef __NVCC__
-    cuda_free_random_state();
-    #endif
 }
 
 void GCN::set_input() {
@@ -172,7 +149,8 @@ void GCN::run() {
             }
         }
     }
-    
+    printf("total training time=%.5f\n", timer_total(TMR_TRAIN));
+
     float test_loss, test_acc;
     timer_start(TMR_TEST);
     std::tie(test_loss, test_acc) = eval(3);

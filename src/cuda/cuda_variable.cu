@@ -40,7 +40,6 @@ void CUDAVariable::print(int col) {
     float cpu_data[size];
     CUDA_CHECK(cudaMemcpy(cpu_data, data, size * sizeof(float), cudaMemcpyDeviceToHost));
     int count = 0;
-    printf("---------DATA----------\n");
     for (int i = 0; i < size; ++i) {
         printf("%.4f ", cpu_data[i]);
         count++;

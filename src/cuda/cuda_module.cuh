@@ -2,7 +2,7 @@
 #define CUDA_MODULE_CUH
 
 #include "optim.h"
-#include "kernel.cuh"
+#include "cuda_kernel.cuh"
 #include "cuda_variable.cuh"
 
 using std::vector;

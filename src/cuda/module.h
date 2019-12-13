@@ -3,12 +3,6 @@
 #include "variable.h"
 #include "sparse.h"
 
-#ifdef __CUDACC__
-#define CUDA_MEMBER __host__ __device__
-#else
-#define CUDA_MEMBER
-#endif
-
 class Module {
 public:
     virtual void forward(bool) = 0;

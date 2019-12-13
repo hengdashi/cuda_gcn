@@ -13,7 +13,7 @@ void CUDAMatmul::forward(bool training) {
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
     cuda_Matmul_forward_kernel<<<block, thread_in_block>>>(a->data, b->data, c->data, m, n, p);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_MATMUL_FW);
 }
@@ -28,10 +28,10 @@ void CUDAMatmul::backward() {
     dim3 thread_in_block(TILE_SIZE, TILE_SIZE, 1);
     cuda_Matmul_backward_A_kernel<<<block_a, thread_in_block>>>(a->grad, b->data, c->grad, m, n, p);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
     cuda_Matmul_backward_B_kernel<<<block_b, thread_in_block>>>(b->grad, a->data, c->grad, m, n, p);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_MATMUL_BW);
 }
@@ -49,7 +49,7 @@ void CUDASparseMatmul::forward(bool training) {
     dim3 thread_in_block(p, 1, 1);
     cuda_SparseMatmul_forward_kernel<<<block, thread_in_block>>>(a->data, b->data, c->data, sp->indptr, sp->indices, p);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_SPMATMUL_FW);
 }
@@ -64,7 +64,7 @@ void CUDASparseMatmul::backward() {
     dim3 thread_in_block(p, 1, 1);
     cuda_SparseMatmul_backward_kernel<<<block, thread_in_block>>>(a->data, b->grad, c->grad, sp->indptr, sp->indices, p);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_SPMATMUL_BW);
 }
@@ -82,7 +82,7 @@ void CUDAGraphSum::forward(bool training) {
     dim3 thread_in_block(dim, 1, 1);
     cuda_GraphSum_forward_kernel<<<block, thread_in_block>>>(in->data, out->data, graph->indptr, graph->indices, dim, numNodes);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_GRAPHSUM_FW);
 }
@@ -97,7 +97,7 @@ void CUDAGraphSum::backward() {
     dim3 thread_in_block(dim, 1, 1);
     cuda_GraphSum_backward_kernel<<<block, thread_in_block>>>(in->grad, out->grad, graph->indptr, graph->indices, dim, numNodes);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_GRAPHSUM_BW);
 }
@@ -122,14 +122,14 @@ void CUDACrossEntropyLoss::forward(bool training) {
     dim3 thread_in_block((logitsPerClass + block.x) / block.x, 1, 1);
     cuda_CrossEntropy_forward_A_kernel<<<block, thread_in_block>>>(logits->data, logits->grad, training, num_classes, truth, d_count, d_loss, logits->size);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     thrust::device_ptr<int> count_ptr = thrust::device_pointer_cast(d_count);
     int count = thrust::reduce(count_ptr, count_ptr + logitsPerClass, (int)0, thrust::plus<int>());
     thrust::device_ptr<float> loss_ptr = thrust::device_pointer_cast(d_loss);
     *loss = thrust::reduce(loss_ptr, loss_ptr + logitsPerClass, (float)0.0, thrust::plus<float>());
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     *loss /= count;
     dim3 block2(64, 1, 1);
@@ -137,7 +137,7 @@ void CUDACrossEntropyLoss::forward(bool training) {
     if (training) {
         cuda_CrossEntropy_forward_B_kernel<<<block2, thread_in_block2>>>(logits->grad, logits->size, count);
         CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
+        // CUDA_CHECK(cudaDeviceSynchronize());
     }
 
     CUDA_CHECK(cudaFree(d_loss));
@@ -165,7 +165,7 @@ void CUDAReLU::forward(bool training) {
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_ReLU_forward_kernel<<<block, thread_in_block>>>(in->data, mask, in->size, training);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_RELU_FW);
 }
@@ -177,7 +177,7 @@ void CUDAReLU::backward() {
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_ReLU_backward_kernel<<<block, thread_in_block>>>(in->grad, mask, in->size);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_RELU_BW);
 }
@@ -204,7 +204,7 @@ void CUDADropout::forward(bool training) {
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_Dropout_forward_kernel<<<block, thread_in_block>>>(in->data, mask, devStates, in->size, p, scale, (mask != nullptr));
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_DROPOUT_FW);
 }
@@ -218,7 +218,7 @@ void CUDADropout::backward() {
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_Dropout_backward_kernel<<<block, thread_in_block>>>(in->grad, mask, in->size, scale);
     CUDA_CHECK(cudaGetLastError());
-    CUDA_CHECK(cudaDeviceSynchronize());
+    // CUDA_CHECK(cudaDeviceSynchronize());
 
     timer_stop(TMR_DROPOUT_BW);
 }
@@ -255,6 +255,6 @@ void CUDAAdam::step() {
         dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
         cuda_Adam_step_kernel<<<block, thread_in_block>>>(var->grad, var->data, var->m, var->v, var->decay, params.weight_decay, params.beta1, params.beta2, params.eps, step_size, var->size);
         CUDA_CHECK(cudaGetLastError());
-        CUDA_CHECK(cudaDeviceSynchronize());
+        // CUDA_CHECK(cudaDeviceSynchronize());
     }
 }

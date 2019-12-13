@@ -4,6 +4,7 @@
 
 uint64_t rand_state[2];
 void init_rand_state() {
+    srand((unsigned)time(NULL));
     int x = 0, y = 0;
     while (x == 0 || y== 0) {
         x = rand();

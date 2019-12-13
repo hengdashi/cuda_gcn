@@ -6,11 +6,6 @@
 #include "module.h"
 #include "optim.h"
 
-#ifdef __CUDACC__
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#endif
-
 struct GCNParams {
     int num_nodes, input_dim, hidden_dim, output_dim;
     float dropout, learning_rate, weight_decay;

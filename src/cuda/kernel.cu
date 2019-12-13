@@ -579,7 +579,7 @@ void cuda_Dropout_forward_kernel(float *in, int *mask, curandState *state, const
     bool keep;
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     if (id < size) {
-        x = curand_uniform(&state[id]);
+        x = curand_uniform(&state[id % MAX_THREAD_PER_BLOCK]);
         keep = x >= p;
         in[id] *= keep ? scale : 0;
         if (useMask) mask[id] = keep;

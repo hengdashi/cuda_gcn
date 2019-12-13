@@ -7,6 +7,8 @@ using std::max_element;
 
 CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
 
+    cuda_init_random_state(MAX_THREAD_PER_BLOCK);
+
     this->params = params;
     data = input_data;
     sp = new CUDASparseIndex(data->feature_index);
@@ -24,6 +26,7 @@ CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
     CUDAVariable *layer1_var1 = &variables.back();
     variables.emplace_back(params.input_dim * params.hidden_dim, true);
     CUDAVariable *layer1_weight = &variables.back();
+    layer1_weight->glorot(params.input_dim, params.hidden_dim);
     modules.push_back(new CUDASparseMatmul(input, layer1_weight, layer1_var1, sp, params.num_nodes, params.input_dim, params.hidden_dim));
     
     // graph sum
@@ -42,6 +45,7 @@ CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
     CUDAVariable *layer2_var1 = &variables.back();
     variables.emplace_back(params.hidden_dim * params.output_dim, true);
     CUDAVariable *layer2_weight = &variables.back();
+    layer2_weight->glorot(params.hidden_dim, params.output_dim);
     modules.push_back(new CUDAMatmul(layer1_var2, layer2_weight, layer2_var1, params.num_nodes, params.hidden_dim, params.output_dim));
 
     // graph sum
@@ -59,12 +63,10 @@ CUDAGCN::CUDAGCN(GCNParams params, GCNData *input_data) {
     adam_params.weight_decay = params.weight_decay;
     optimizer = new CUDAAdam({{layer1_weight, true}, {layer2_weight, false}}, adam_params);
 
-    vector<int> sizes = {input->size, layer1_weight->size, layer1_var2->size, layer2_weight->size};
-    int rand_size = *max_element(sizes.begin(), sizes.end());
-    printf("rand_size: %d\n", rand_size);
-    cuda_init_random_state(rand_size);
-    layer1_weight->glorot(params.input_dim, params.hidden_dim);
-    layer2_weight->glorot(params.hidden_dim, params.output_dim);
+    // vector<int> sizes = {input->size, layer1_weight->size, layer1_var2->size, layer2_weight->size};
+    // int rand_size = *max_element(sizes.begin(), sizes.end());
+    // printf("rand_size: %d\n", rand_size);
+    // cuda_init_random_state(rand_size);
 }
 
 CUDAGCN::~CUDAGCN() {
@@ -144,7 +146,7 @@ pair<float, float> CUDAGCN::train_epoch() {
     float train_loss = loss + get_l2_penalty();
     float train_acc = get_accuracy();
     for (int i = modules.size() - 1; i >= 0; i--)
-        modules[i]->backward();
+        modules[i]->backward();        
     optimizer->step();
     return {train_loss, train_acc};
 }

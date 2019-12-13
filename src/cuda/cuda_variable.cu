@@ -17,7 +17,7 @@ CUDAVariable::~CUDAVariable() {
 __global__ void cuda_Variable_glorot_kernel(float *data, curandState *state, int size, float scale) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     if (id < size)
-        data[id] = (curand_uniform(&state[id]) - 0.5) * scale;
+        data[id] = (curand_uniform(&state[id % MAX_THREAD_PER_BLOCK]) - 0.5) * scale;
 }
 
 void CUDAVariable::glorot(int in_size, int out_size) {
@@ -34,6 +34,29 @@ void CUDAVariable::zero() {
 
 void CUDAVariable::zero_grad() {
     CUDA_CHECK(cudaMemset(grad, 0, size * sizeof(float)));
+}
+
+void CUDAVariable::print(int col) {
+    float cpu_data[size];
+    CUDA_CHECK(cudaMemcpy(cpu_data, data, size * sizeof(float), cudaMemcpyDeviceToHost));
+    int count = 0;
+    printf("---------DATA----------\n");
+    for (int i = 0; i < size; ++i) {
+        printf("%.4f ", cpu_data[i]);
+        count++;
+        if (count % col == 0) printf("\n");
+    }
+    printf("\n");
+}
+
+float CUDAVariable::grad_norm() {
+    float norm = 0;
+    float *cpu_grad = new float[size];
+    CUDA_CHECK(cudaMemcpy(cpu_grad, grad, size * sizeof(float), cudaMemcpyDeviceToHost));
+    for(int i = 0; i < size; ++i)
+        norm += cpu_grad[i] * cpu_grad[i];
+    delete[] cpu_grad;
+    return sqrtf(norm);
 }
 
 CUDASparseIndex::CUDASparseIndex(const SparseIndex &sp) {

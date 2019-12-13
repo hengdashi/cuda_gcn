@@ -1,5 +1,6 @@
 #include "cuda_module.cuh"
 #include "timer.h"
+#include "rand.h"
 
 CUDAMatmul::CUDAMatmul(CUDAVariable *a, CUDAVariable *b, CUDAVariable *c, int m, int n, int p) : 
     a(a), b(b), c(c), m(m), n(n), p(p) {}
@@ -94,7 +95,7 @@ void CUDAGraphSum::backward() {
     const int numNodes = graph->indptr_size - 1;
     dim3 block(numNodes, 1, 1);
     dim3 thread_in_block(dim, 1, 1);
-    cuda_GraphSum_forward_kernel<<<block, thread_in_block>>>(in->grad, out->grad, graph->indptr, graph->indices, dim, numNodes);
+    cuda_GraphSum_backward_kernel<<<block, thread_in_block>>>(in->grad, out->grad, graph->indptr, graph->indices, dim, numNodes);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
 
@@ -177,7 +178,7 @@ void CUDAReLU::backward() {
     cuda_ReLU_backward_kernel<<<block, thread_in_block>>>(in->grad, mask, in->size);
     CUDA_CHECK(cudaGetLastError());
     CUDA_CHECK(cudaDeviceSynchronize());
-    
+
     timer_stop(TMR_RELU_BW);
 }
 

@@ -3,17 +3,19 @@ CXXFLAGS= -O3 -std=c++11
 GCCFLAGS= -Wall -Wno-sign-compare -Wno-unused-variable -Wno-unknown-pragmas
 LDFLAGS=-lm -lstdc++
 
-prefix=src/cuda/
+prefix=src/
 CXXFILES=$(prefix)*.cpp
 HFILES=$(prefix)*.h
 
 CUDAFILES=$(prefix)*.cu
 CUDAHFILES=$(prefix)*.cuh
 
-seq: $(prefix)main.cpp $(CXXFILES) $(HFILES)
+all: clean seq cuda
+
+seq: $(CXXFILES) $(HFILES)
 	$(CXX) $(CXXFLAGS) -o gcn-seq $(CXXFILES) $(LDFLAGS)
 
-cuda: $(prefix)main.cpp $(CXXFILES) $(CUDAFILES) $(HFILES) $(CUDAHFILES)
+cuda: $(CXXFILES) $(CUDAFILES) $(HFILES) $(CUDAHFILES)
 	nvcc $(CXXFLAGS) -o gcn-cuda $(CXXFILES) $(CUDAFILES) $(LDFLAGS)
 
 clean:

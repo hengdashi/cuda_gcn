@@ -85,8 +85,9 @@ void CUDAGCN::set_input() {
 void CUDAGCN::set_truth(int current_split) {
     int *d_data_split, *d_data_label;
     CUDA_CHECK(cudaMalloc((void**) &d_data_split, params.num_nodes * sizeof(int)));
-    CUDA_CHECK(cudaMemcpy(d_data_split, data->split.data(), params.num_nodes * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMalloc((void**) &d_data_label, params.num_nodes * sizeof(int)));
+
+    CUDA_CHECK(cudaMemcpy(d_data_split, data->split.data(), params.num_nodes * sizeof(int), cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_data_label, data->label.data(), params.num_nodes * sizeof(int), cudaMemcpyHostToDevice));
     dim3 block((params.num_nodes-1)/MAX_THREAD_PER_BLOCK + 1, 1, 1);
     dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
@@ -140,7 +141,7 @@ pair<float, float> CUDAGCN::train_epoch() {
     float train_loss = loss + get_l2_penalty();
     float train_acc = get_accuracy();
     for (int i = modules.size() - 1; i >= 0; i--)
-        modules[i]->backward();        
+        modules[i]->backward();
     optimizer->step();
     return {train_loss, train_acc};
 }
@@ -157,7 +158,7 @@ pair<float, float> CUDAGCN::eval(int current_split) {
 
 void CUDAGCN::run() {
     int epoch = 1;
-    // float total_time = 0.0;
+
     std::vector<float> loss_history;
     for(; epoch <= params.epochs; epoch++) {
         float train_loss, train_acc, val_loss, val_acc;

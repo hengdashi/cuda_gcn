@@ -6,20 +6,22 @@ This project is a GPU acceleration of the Graph Convolutional Network.
 
 Team members are: Zongze Li, Yuanhao Jia, Hengda Shi, Jintao Jiang
 
-## To convert reddit data format (networkx, numpy, scipy are required)
+## Setup
+
+### Convert reddit data format (networkx, numpy, scipy are required)
 
     python3 reddit_preprocess.py
 
-## To run cora/citeseer/pubmed/reddit datasets on CPU
+### Run cora/citeseer/pubmed/reddit datasets on CPU
 
     make seq
     ./gcn-seq cora
 
-## To run cora/citeseer/pubmed/reddit datasets on GPU
+### Run cora/citeseer/pubmed/reddit datasets on GPU
 
     make cuda
     ./gcn-cuda cora
 
-## To clean up executable
+### Clean up executable
 
     make clean

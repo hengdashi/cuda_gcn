@@ -21,7 +21,7 @@ CUDAOBJS = $(CUDA_DIR)/cuda_gcn.o \
 
 EXECUTABLES = seq_gcn cuda_gcn
 
-all: clean seq cuda
+all: seq cuda
 
 seq: $(SRC_DIR)/seqmain.o $(COMMONOBJS) $(SEQOBJS)
 	$(CXX) $(COMMONFLAGS) $(CXXFLAGS) $^ -o $@_gcn

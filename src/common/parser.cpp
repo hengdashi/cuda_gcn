@@ -9,9 +9,10 @@
 
 using namespace std;
 Parser::Parser(GCNParams *gcnParams, GCNData *gcnData, std::string graph_name) {
-    this->graph_file.open("data/" + graph_name + ".graph");
-    this->split_file.open("data/" + graph_name + ".split");
-    this->svmlight_file.open("data/" + graph_name + ".svmlight");
+    string root = "data/";
+    this->graph_file.open(root + graph_name + ".graph");
+    this->split_file.open(root + graph_name + ".split");
+    this->svmlight_file.open(root + graph_name + ".svmlight");
     this->gcnParams = gcnParams;
     this->gcnData = gcnData;
 }

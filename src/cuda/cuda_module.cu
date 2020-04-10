@@ -124,8 +124,8 @@ void CUDACrossEntropyLoss::forward(bool training) {
     CUDA_CHECK(cudaMemset(d_loss, 0, logitsPerClass * sizeof(float)));
     CUDA_CHECK(cudaMemset(d_count, 0, logitsPerClass * sizeof(int)));
 
-    dim3 block(logitsPerClass, 1, 1);
-    dim3 thread_in_block(1, 1, 1);
+    dim3 block((logitsPerClass-1) / MAX_THREAD_PER_BLOCK + 1, 1, 1);
+    dim3 thread_in_block(MAX_THREAD_PER_BLOCK, 1, 1);
     cuda_CrossEntropy_forward_A_kernel<<<block, thread_in_block>>>(logits->data, logits->grad, training, num_classes, truth, d_count, d_loss, logits->size);
     CUDA_CHECK(cudaGetLastError());
     // CUDA_CHECK(cudaDeviceSynchronize());
@@ -138,8 +138,8 @@ void CUDACrossEntropyLoss::forward(bool training) {
     // CUDA_CHECK(cudaDeviceSynchronize());
 
     *loss /= count;
-    dim3 block2(logits->size, 1, 1);
-    dim3 thread_in_block2(1, 1, 1);
+    dim3 block2((logits->size-1) / MAX_THREAD_PER_BLOCK + 1, 1, 1);
+    dim3 thread_in_block2(MAX_THREAD_PER_BLOCK, 1, 1);
     if (training) {
         cuda_CrossEntropy_forward_B_kernel<<<block2, thread_in_block2>>>(logits->grad, logits->size, count);
         CUDA_CHECK(cudaGetLastError());

@@ -165,7 +165,7 @@ void cuda_GraphSum_backward_kernel(float *d_in_grad, float *d_out_grad, int *d_i
 // cross entropy
 __global__ 
 void cuda_CrossEntropy_forward_A_kernel(float* logits_data, float* logits_grad, bool training, int num_classes, int* truth, int* count, float* thread_loss, int size) {
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= size) return;
     if (truth[i] < 0) {
         count[i] = 0;
@@ -195,7 +195,7 @@ void cuda_CrossEntropy_forward_A_kernel(float* logits_data, float* logits_grad, 
 
 __global__
 void cuda_CrossEntropy_forward_B_kernel(float *logits_grad, int size, int count) {
-    int i = threadIdx.x + blockIdx.x * blockDim.x;
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i < size) logits_grad[i] /= count;
 }
 
@@ -203,7 +203,7 @@ void cuda_CrossEntropy_forward_B_kernel(float *logits_grad, int size, int count)
 // ReLU
 __global__
 void cuda_ReLU_forward_kernel(float *d_in_data, bool *d_mask, const long unsigned int datasize, bool training) {
-    uint i = (blockIdx.x * blockDim.x) + threadIdx.x;
+    uint i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= datasize) return;
 
     bool keep = d_in_data[i] > 0;
@@ -213,7 +213,7 @@ void cuda_ReLU_forward_kernel(float *d_in_data, bool *d_mask, const long unsigne
 
 __global__
 void cuda_ReLU_backward_kernel(float *d_in_grad, bool *d_mask, long unsigned int datasize) {
-    uint i = (blockIdx.x * blockDim.x) + threadIdx.x;
+    uint i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= datasize) return;
     if (!d_mask[i]) d_in_grad[i] = 0;
 }
